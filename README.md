@@ -16,6 +16,8 @@ The data directory stores the background and font files needed to run the progra
 /environment/requirements.txt may be used to create a conda environment.
 
 ## Usage
-Edit path in 模拟结果后处理作图示例文件test.slurm and run:
-$ sbatch /dssg/home/acct-esehazenet/hazenet-pg5/PostAtmos/模拟结果后处理作图示例文件test.slurm
+Edit path in 模拟结果后处理作图示例文件test.slurm and run:  
+
+$ sbatch /dssg/home/acct-esehazenet/hazenet-pg5/PostAtmos/模拟结果后处理作图示例文件test.slurm  
+
 platform: linux-64
