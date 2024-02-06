@@ -1,0 +1,51 @@
+﻿city,lat,lng,country,capital,population
+Beijing,39.904,116.4075,China,primary,19437000
+Shanghai,31.1667,121.4667,China,admin,22118000
+Guangzhou,23.1288,113.259,China,admin,21489000
+Beijing,39.904,116.4075,China,primary,19437000
+Chengdu,30.66,104.0633,China,admin,11920000
+Tianjin,39.1467,117.2056,China,admin,10932000
+Shijiazhuang,38.0422,114.5086,China,admin,10784600
+Zhengzhou,34.7492,113.6605,China,admin,10136000
+Wuhan,30.5872,114.2881,China,admin,9729000
+Chongqing,29.55,106.5069,China,admin,8261000
+Changsha,28.1987,112.9709,China,admin,8154700
+Jinan,36.6667,116.9833,China,admin,7967400
+Nanjing,32.05,118.7667,China,admin,7729000
+Changchun,43.9,125.2,China,admin,7674439
+Hefei,31.8639,117.2808,China,admin,7457027
+Nanning,22.8192,108.315,China,admin,7254100
+Shenyang,41.8039,123.4258,China,admin,7208000
+Xi'an,34.2667,108.9,China,admin,7090000
+Kunming,25.0433,102.7061,China,admin,6850000
+Hangzhou,30.25,120.1675,China,admin,6713000
+Nanchang,28.6842,115.8872,China,admin,5545500
+Fuzhou,26.0769,119.2917,China,admin,5245000
+Guiyang,26.5794,106.7078,China,admin,4881900
+Harbin,45.75,126.6333,China,admin,4583000
+Taiyuan,37.8733,112.5425,China,admin,4201592
+Lanzhou,36.0617,103.8318,China,admin,3616163
+Urumqi,43.8225,87.6125,China,admin,3112559
+Hohhot,40.8151,111.6629,China,admin,2866615
+Xining,36.6239,101.7787,China,admin,2208708
+Yinchuan,38.4795,106.2254,China,admin,1993088
+Haikou,20.02,110.32,China,admin,1776141
+Lhasa,29.6458,91.1408,China,admin,902500
+Hong Kong,22.3069,114.1831,China,admin,7398000
+Taipei,25.05,121.5,China,admin,23190000
+Manila,14.6,120.9833,Philippines,primary,23971000
+Seoul,37.56,126.99,South Korea,primary,22394000
+Bangkok,13.75,100.5167,Thailand,primary,17573000
+Dhaka,23.7289,90.3944,Bangladesh,primary,16839000
+Hanoi,21.0245,105.8412,Vietnam,primary,8246600
+Rangoon,16.795,96.16,Myanmar,primary,5430000
+Pyongyang,39.03,125.73,North Korea,primary,2863000
+Phnom Penh,11.5696,104.921,Cambodia,primary,2129371
+Ulaanbaatar,47.9214,106.9055,Mongolia,primary,1396288
+Nay Pyi Taw,19.7475,96.115,Myanmar,primary,1160242
+Nur-Sultan,51.1333,71.4333,Kazakhstan,primary,1078362
+Bishkek,42.8667,74.5667,Kyrgyzstan,primary,1053900
+Kathmandu,27.7167,85.3667,Nepal,primary,975453
+Vientiane,17.9667,102.6,Laos,primary,948487
+New Delhi,28.6139,77.209,India,primary,249998
+Thimphu,27.4833,89.6333,Bhutan,primary,104000
