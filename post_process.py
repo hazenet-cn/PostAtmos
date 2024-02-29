@@ -1,38 +1,39 @@
 # -*- coding: utf-8 -*-
+import cartopy.crs as ccrs
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import datetime
 import dask
+import domain
+import glob
+import itertools
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.cm
 import matplotlib.animation
-import cartopy.crs as ccrs
-import glob
+from matplotlib.colors import LogNorm
+import matplotlib.colors as col
+import math
+import multiprocessing
+import netCDF4
 import numpy
 from operator import itemgetter
-import pyproj
-import pathlib; 
-import itertools;
 import os
-from scipy import stats
-import wrf
-import netCDF4
-import re
-import sqlalchemy
-import math
+import pyproj
+import pathlib
 import pandas
+import re
+from scipy import stats
+import sqlalchemy
 from sklearn import metrics
 import sys
 import shutil
-from matplotlib.colors import LogNorm
-import matplotlib.colors as col
 from sklearn.linear_model import LinearRegression
-from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import stat
-import xarray
-import multiprocessing
 import time
 from warnings import simplefilter
-import domain
+import wrf
+import xarray
+
 simplefilter(action='ignore', category=FutureWarning)
 heiti_font = matplotlib.font_manager.FontProperties\
     (fname="/dssg/home/acct-esehazenet/share/public_dataset/raw/simhei.ttf", size=25)
@@ -42,47 +43,71 @@ airdb_engine = sqlalchemy.create_engine("mysql+pymysql://airdb_query:2022*sjtu@1
 airdb_engine2 = sqlalchemy.create_engine("mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/AIR_China")
     
 class Post_Process():
-    def __init__(self,data_type,date_start,date_end,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities,process_type=None,case_name=None):
+    def __init__(self,data_type,date_start,date_end,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities):
         self.data_type = data_type
         self.date_start = datetime.datetime.strptime(date_start, "%Y-%m-%d")
         self.date_end = datetime.datetime.strptime(date_end, "%Y-%m-%d") + datetime.timedelta(hours=23)
         self.date_cover = pandas.date_range(self.date_start + datetime.timedelta(hours=8), self.date_end + datetime.timedelta(hours=8), freq='H')
-        self.process_type = process_type
         self.source_dirs = source_dirs
-        self.case_name = case_name
         self.extracted_layers = extracted_layers
         self.sites_includedprovinces = sites_includedprovinces
         self.sites_includedcities = sites_includedcities
         
         if self.data_type == 'WRF':
-            self.factors = ['tc|°(C)|-10~40|ambient temperature','ws|m/s|0~10|ambient wind speed',\
-        'wd|degree|0~360|ambient wind direction','pressure|hPa|900~1020|ambient pressure',\
-        'rh|%|40~100|ambient relative humidity','PBLH|m|0~1000|planetary boundary layer']
-            nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[0] + '/wrfout_d01_' + (self.date_start + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00'))
-            self.Domain_NCOLS = int(nc_ds.getncattr('WEST-EAST_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['west_east']) also works
-            self.Domain_NROWS = int(nc_ds.getncattr('SOUTH-NORTH_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['south_north']) also works
-            self.Domain_CEN_LAT = float(nc_ds.getncattr('CEN_LAT'))
-            self.Domain_CEN_LON = float(nc_ds.getncattr('CEN_LON'))
-            self.Domain_TRUELAT1 = float(nc_ds.getncattr('TRUELAT1'))
-            self.Domain_TRUELAT2 = float(nc_ds.getncattr('TRUELAT2'))
-            self.Domain_XORIG = float(wrf.cartopy_xlim(wrfin=nc_ds)[0])
-            self.Domain_YORIG = float(wrf.cartopy_ylim(wrfin=nc_ds)[0])
-            self.Domain_DX = float(nc_ds.getncattr('DX'))
-            self.Domain_DY = float(nc_ds.getncattr('DY'))
+            self.factors = ['TC|°(C)|-10~40|ambient temperature','WS|m/s|0~10|ambient wind speed',\
+        'WD|degree|0~360|ambient wind direction','Pressure|hPa|900~1020|ambient pressure',\
+        'RH|%|40~100|ambient relative humidity','PBLH|m|0~1000|planetary boundary layer']
+
+            if self.sites_includedprovinces != ['all']:
+                where_str = 'station_code is not null and station_province in ' \
+                    + str(self.sites_includedprovinces).replace('[','(').replace(']',')')
+            else:
+                where_str = 'station_code is not null'
+            if self.sites_includedcities != ['all']:
+                where_str = where_str + ' and city_name in ' \
+                    + str(self.sites_includedcities).replace('[','(').replace(']',')')
+            ds_station = pandas.read_sql_query('SELECT * FROM t_weather_data_station WHERE ' \
+                + where_str + ' ORDER BY station_code', airdb_engine)
+            self.siteIDs = ds_station['station_code'].to_numpy().astype(str)
+            self.sitenames = ds_station['station_name'].to_numpy()
+            self.sitelats = ds_station['station_lat'].to_numpy()
+            self.sitelons = ds_station['station_lon'].to_numpy()
+            self.sitecities = ds_station['city_name'].to_numpy()
+            self.siteprovince = ds_station['station_province'].to_numpy()
+            self.sitecols = []
+            self.siterows = []
+            # 筛选网格空间范围内的站点
+            for source_index in range(len(self.source_dirs.split(';'))):
+                nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[source_index] + '/wrfout_d01_' + (self.date_start + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00'))
+                Domain_NCOLS = int(nc_ds.getncattr('WEST-EAST_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['west_east']) also works
+                Domain_NROWS = int(nc_ds.getncattr('SOUTH-NORTH_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['south_north']) also works
+                Domain_CEN_LAT = float(nc_ds.getncattr('CEN_LAT'))
+                Domain_CEN_LON = float(nc_ds.getncattr('CEN_LON'))
+                Domain_TRUELAT1 = float(nc_ds.getncattr('TRUELAT1'))
+                Domain_TRUELAT2 = float(nc_ds.getncattr('TRUELAT2'))
+                Domain_XORIG = float(wrf.cartopy_xlim(wrfin=nc_ds)[0])
+                Domain_YORIG = float(wrf.cartopy_ylim(wrfin=nc_ds)[0])
+                Domain_DX = float(nc_ds.getncattr('DX'))
+                Domain_DY = float(nc_ds.getncattr('DY'))
+                LCCProj = pyproj.Proj(proj='lcc', lat_1=Domain_TRUELAT1,lat_2=Domain_TRUELAT2,lat_0=Domain_CEN_LAT,lon_0=Domain_CEN_LON,a=6370000,b=6370000)
+                lcc_x, lcc_y = LCCProj(self.sitelons, self.sitelats)
+                self.sitecols.append(numpy.trunc((lcc_x - Domain_XORIG) / Domain_DX).astype(int))
+                self.siterows.append(numpy.trunc((lcc_y - Domain_YORIG) / Domain_DY).astype(int))
+                condition = (self.sitecols[source_index] >= 0) & (self.sitecols[source_index] < Domain_NCOLS) \
+                    & (self.siterows[source_index] >= 0) & (self.siterows[source_index] < Domain_NROWS)
+                selected_indices = numpy.where(condition)[0]
+                self.siteIDs = self.siteIDs[selected_indices]
+                self.sitenames = self.sitenames[selected_indices]
+                self.sitelats = self.sitelats[selected_indices]
+                self.sitelons = self.sitelons[selected_indices]
+                self.sitecities = self.sitecities[selected_indices]
+                self.siteprovince = self.siteprovince[selected_indices]
+                self.sitecols[source_index] = self.sitecols[source_index][selected_indices]
+                self.siterows[source_index] = self.siterows[source_index][selected_indices]
              
-        if self.data_type == 'CMAQ_BAU':
+        if self.data_type == 'CMAQ_regularsites':  # 针对全国空气质量国控点
             self.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',
-        'SO2|μg/m3|0~60|sulfur dioxide','NO|μg/m3|0~60|nitric oxide','NH3|μg/m3|0~10|ammonia','HNO3|μg/m3|0~30|nitric acid',
-        'PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter',
-        'PM25_NH4|μg/m3|0~30|ammonium ion in fine particles','PM25_NO3|μg/m3|0~30|nitrate ion in fine particles',
-        'PM25_SO4|μg/m3|0~30|sulfate ion in fine particles','PM25_OC|μg/m3|0~50|organic carbon in fine particles',
-        'PM25_EC|μg/m3|0~10|elemental carbon in fine particles','TS|μg/m3|0~30|Total Sulfur',\
-        'TNN|μg/m3|0~100|Total Nitrate Nitrogen','TAN|μg/m3|0~30|Total Ammonia Nitrogen']
-        #'PM25_Cl|μg/m3|0~5|chlorine ion in fine particles','PM25_SOIL|μg/m3|0~10|Soil matter in fine particles'\
-        #'PM25_Na|μg/m3|0~5|sodium ion in fine particles','PM25_Mg|μg/m3|0~5|magnesium ion in fine particles',\
-        #'PM25_K|μg/m3|0~5|potassium ion in fine particles','PM25_Ca|μg/m3|0~5|calcium ion in fine particles',\
-        #'PM25_POC|μg/m3|0~30|primary organic carbon in fine particles','PM25_POM|μg/m3|0~30|primary organic matter in fine particles',\
-        #'PM25_SOC|μg/m3|0~30|secondary organic carbon in fine particles','PM25_SOM|μg/m3|0~30|secondary organic matter in fine particles'
+        'SO2|μg/m3|0~60|sulfur dioxide','PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter']
             #提取观测站点信息
             if self.sites_includedprovinces != ['all']:
                 where_str = 'station_code is not null and station_province in ' \
@@ -137,6 +162,75 @@ class Post_Process():
                 self.siteprovince = self.siteprovince[selected_indices]
                 self.sitecols[source_index] = self.sitecols[source_index][selected_indices]
                 self.siterows[source_index] = self.siterows[source_index][selected_indices]
+
+        if self.data_type == 'CMAQ_supersites':
+            self.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',
+        'SO2|μg/m3|0~60|sulfur dioxide','NO|μg/m3|0~60|nitric oxide','NH3|μg/m3|0~10|ammonia','HNO3|μg/m3|0~30|nitric acid',
+        'PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter',
+        'PM25_NH4|μg/m3|0~30|ammonium ion in fine particles','PM25_NO3|μg/m3|0~30|nitrate ion in fine particles',
+        'PM25_SO4|μg/m3|0~30|sulfate ion in fine particles','PM25_OC|μg/m3|0~50|organic carbon in fine particles',
+        'PM25_EC|μg/m3|0~10|elemental carbon in fine particles','TS|μg/m3|0~30|Total Sulfur',\
+        'TNN|μg/m3|0~100|Total Nitrate Nitrogen','TAN|μg/m3|0~30|Total Ammonia Nitrogen']
+        #'PM25_Cl|μg/m3|0~5|chlorine ion in fine particles','PM25_SOIL|μg/m3|0~10|Soil matter in fine particles'\
+        #'PM25_Na|μg/m3|0~5|sodium ion in fine particles','PM25_Mg|μg/m3|0~5|magnesium ion in fine particles',\
+        #'PM25_K|μg/m3|0~5|potassium ion in fine particles','PM25_Ca|μg/m3|0~5|calcium ion in fine particles',\
+        #'PM25_POC|μg/m3|0~30|primary organic carbon in fine particles','PM25_POM|μg/m3|0~30|primary organic matter in fine particles',\
+        #'PM25_SOC|μg/m3|0~30|secondary organic carbon in fine particles','PM25_SOM|μg/m3|0~30|secondary organic matter in fine particles'
+            #提取观测站点信息
+            if self.sites_includedprovinces != ['all']:
+                where_str = 'station_code is not null and station_province in ' \
+                    + str(self.sites_includedprovinces).replace('[','(').replace(']',')')
+            else:
+                where_str = 'station_code is not null'
+            if self.sites_includedcities != ['all']:
+                where_str = where_str + ' and station_city in ' \
+                    + str(self.sites_includedcities).replace('[','(').replace(']',')')
+            ds_station = pandas.read_sql_query('SELECT * FROM Supersite_Sites WHERE ' \
+                    + where_str + ' ORDER BY station_code', airdb_engine2)
+            self.siteIDs = ds_station['station_code'].to_numpy().astype(str)
+            self.sitenames = ds_station['station_name'].to_numpy()
+            self.sitelats = ds_station['station_lat'].to_numpy()
+            self.sitelons = ds_station['station_lon'].to_numpy()
+            self.sitecities = ds_station['station_city'].to_numpy()
+            self.siteprovince = ds_station['station_province'].to_numpy()
+            self.sitecols = []
+            self.siterows = []
+            # 筛选网格空间范围内的站点
+            for source_index in range(len(self.source_dirs.split(';'))):
+                init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
+                if not os.path.exists(init_file):
+                    init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
+                if not os.path.exists(init_file):
+                    print('the error of data sources!!')
+                    sys.exit()
+                else:
+                    nc_ds = netCDF4.Dataset(init_file)
+                Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
+                Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
+                Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
+                Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
+                Domain_XORIG = float(nc_ds.getncattr('XORIG'))
+                Domain_YORIG = float(nc_ds.getncattr('YORIG'))
+                Domain_DX = float(nc_ds.getncattr('XCELL'))
+                Domain_DY = float(nc_ds.getncattr('YCELL'))
+                Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
+                Domain_NROWS = int(nc_ds.getncattr('NROWS'))
+                LCCProj = pyproj.Proj(proj='lcc', lat_1=Domain_TRUELAT1,lat_2=Domain_TRUELAT2,lat_0=Domain_CEN_LAT,lon_0=Domain_CEN_LON,a=6370000,b=6370000)
+                lcc_x, lcc_y = LCCProj(self.sitelons, self.sitelats)
+                self.sitecols.append(numpy.trunc((lcc_x - Domain_XORIG) / Domain_DX).astype(int))
+                self.siterows.append(numpy.trunc((lcc_y - Domain_YORIG) / Domain_DY).astype(int))
+                condition = (self.sitecols[source_index] >= 0) & (self.sitecols[source_index] < Domain_NCOLS) \
+                    & (self.siterows[source_index] >= 0) & (self.siterows[source_index] < Domain_NROWS)
+                selected_indices = numpy.where(condition)[0]
+                self.siteIDs = self.siteIDs[selected_indices]
+                self.sitenames = self.sitenames[selected_indices]
+                self.sitelats = self.sitelats[selected_indices]
+                self.sitelons = self.sitelons[selected_indices]
+                self.sitecities = self.sitecities[selected_indices]
+                self.siteprovince = self.siteprovince[selected_indices]
+                self.sitecols[source_index] = self.sitecols[source_index][selected_indices]
+                self.siterows[source_index] = self.siterows[source_index][selected_indices]
+
 
         if self.data_type == 'TROPOMI':
             self.start_day = datetime.datetime.strptime(date_start, "%Y-%m-%d") #开始日期，日期选择
@@ -217,8 +311,7 @@ class Post_Process():
             self.Domain_XORIG = float(nc_ds.getncattr('XORIG'))
             self.Domain_YORIG = float(nc_ds.getncattr('YORIG'))
             self.Domain_DX = float(nc_ds.getncattr('XCELL'))
-            self.Domain_DY = float(nc_ds.getncattr('YCELL'))      
-
+            self.Domain_DY = float(nc_ds.getncattr('YCELL'))
 
         matplotlib.rcParams['agg.path.chunksize'] = 10000
         self.simhei_font = matplotlib.font_manager.FontProperties\
@@ -804,360 +897,10 @@ class Post_Process():
             slurm_file.write('/dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/python' + ' ' + python_file + ' >& ' + python_file + '.log')
             slurm_file.close()
             os.system('sbatch ' + slurm_fname)          
-    
-    def official_met_validation(self): # 提取气象站所有数据并进行画图
-        if self.sites_includedprovinces != ['all']:
-            where_str = 'station_code is not null and station_province in ' \
-                + str(self.sites_includedprovinces).replace('[','(').replace(']',')')
-        else:
-            where_str = 'station_code is not null'
-        if self.sites_includedcities != ['all']:
-            where_str = where_str + ' and city_name in ' \
-                + str(self.sites_includedcities).replace('[','(').replace(']',')')
-        ds_station = pandas.read_sql_query('SELECT * FROM t_weather_data_station WHERE ' \
-            + where_str + ' ORDER BY station_code', airdb_engine)
-        ds_station.to_csv(self.output_dir + '/csv/official_met/OBS_Stations.csv', sep=',', index=False, header=True)
-        ds_station = pandas.read_csv(self.output_dir + '/csv/official_met/OBS_Stations.csv')
-        self.siteIDs = ds_station['station_code'].to_numpy().astype(str)
-        ds_sql = "SELECT PRS,CASE WHEN WIN_S_Avg_10mi IS NULL THEN WIN_S_Avg_2mi ELSE WIN_S_Avg_10mi END AS wind_s,"\
-            + "CASE WHEN WIN_D_Avg_10mi IS NULL THEN WIN_D_Avg_2mi ELSE WIN_D_Avg_10mi END AS wind_D,TEM,RHU,PRE_1h,station_code,TimePoint "\
-            + "FROM t_weather_data WHERE station_code IN ('" + "','".join(self.siteIDs) \
-            + "') AND TimePoint BETWEEN '" + (self.date_start + datetime.timedelta(hours=8)).strftime("%Y-%m-%d %H:00") + "' AND '" \
-            + (self.date_end + datetime.timedelta(hours=8)).strftime("%Y-%m-%d %H:00") + "' ORDER BY TimePoint"
-        self.obs = pandas.DataFrame(numpy.array(pandas.read_sql_query(ds_sql, airdb_engine)))
-        self.obs.columns=['pressure','ws','wd','tc','rh','PRECI','SiteCode','TimePoint']
-        self.obs.drop_duplicates(subset=['SiteCode','TimePoint'],keep='first',inplace=True)
-        self.obs.to_csv(self.output_dir + '/csv/official_met/OBS_Records.csv', sep=',', index=False, header=True)
-        
-        # 提取观测点所在网格的模拟时段的所有指标数据
-        for factor_index in range(len(self.factors)):
-            factor_name = self.factors[factor_index].split('|')[0]
-            job_tag = 'official_met_' + factor_name
-            python_file = self.output_dir + '/' + job_tag + '.py'
-            python_job = open(python_file, 'w')
-            python_job.write("import os\n")
-            python_job.write("import datetime\n")
-            python_job.write("import sys\n") 
-            python_job.write('sys.path.append("/dssg/home/acct-esehazenet/share/public_code/Class_files@Hazenet")\n')
-            python_job.write("import post_process\n")
-            python_job.write("import matplotlib\n")
-            python_job.write("import multiprocessing\n")
-            python_job.write("import matplotlib.colors as col\n")
-            python_job.write("import glob\n")
-            python_job.write("import wrf\n")
-            python_job.write("import pyproj\n")
-            python_job.write("import netCDF4\n")
-            python_job.write("import numpy\n")
-            python_job.write("import ctypes\n")
-            python_job.write("import pandas\n")
-            python_job.write("import time\n")
-            python_job.write("objProcess = post_process.Post_Process('" + self.data_type \
-                + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') \
-                + "','" + str(self.source_dirs) + "')\n")
-            python_job.write("objProcess.factors = " + str(self.factors) + "\n")
-            python_job.write("objProcess.output_dir = '" + str(self.output_dir) + "'\n")
-            python_job.write("objProcess.sites_includedprovinces = " + str(self.sites_includedprovinces) + "\n")
-            python_job.write("objProcess.sites_includedcities = " + str(self.sites_includedcities) + "\n")
-            python_job.write("days_count = (objProcess.date_end - objProcess.date_start).days + 1 \n")
-            python_job.write("shared_array_base = multiprocessing.Array(ctypes.c_double, len(objProcess.source_dirs.split(';'))*days_count\
-*24*objProcess.Domain_NROWS*objProcess.Domain_NCOLS, lock=False)\n")
-            python_job.write("def call_extract_2dsimu(source_index, factor_index, day_index):\n")
-            python_job.write("    main_nparray = numpy.frombuffer(shared_array_base, dtype=ctypes.c_double)\n")
-            python_job.write("    main_nparray = main_nparray.reshape(len(objProcess.source_dirs.split(';')),days_count,24,\
-objProcess.Domain_NROWS, objProcess.Domain_NCOLS)\n")
-            python_job.write("    main_nparray[source_index,day_index,:,:,:] = objProcess.extract_2dsimu(str(source_index), 1, factor_index, day_index,'data')\n")
-            python_job.write("pool = multiprocessing.Pool(processes = days_count)\n")
-            python_job.write("for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("    for day_index in range(days_count):\n")
-            python_job.write("        pool.apply_async(call_extract_2dsimu, args=(source_index," + str(factor_index) + ",day_index, ))\n")
-            python_job.write("pool.close()\n")
-            python_job.write("pool.join()\n")
-            python_job.write("main_nparray = numpy.frombuffer(shared_array_base, dtype=ctypes.c_double)\n")
-            python_job.write("main_nparray = main_nparray.reshape(len(objProcess.source_dirs.split(';')),days_count,\
-24, objProcess.Domain_NROWS, objProcess.Domain_NCOLS)\n")
-            # 加载观测数据集
-            python_job.write("ds_station = pandas.read_csv(objProcess.output_dir + '/csv/official_met/OBS_Stations.csv')\n")
-            python_job.write("objProcess.siteIDs = ds_station['station_code'].to_numpy().astype(str)\n")
-            python_job.write("objProcess.sitenames = ds_station['station_name'].to_numpy()\n")
-            python_job.write("objProcess.sitelats = ds_station['station_lat'].to_numpy()\n")
-            python_job.write("objProcess.sitelons = ds_station['station_lon'].to_numpy()\n")
-            python_job.write("objProcess.sitecities = ds_station['city_name'].to_numpy()\n")
-            python_job.write("objProcess.siteprovince = ds_station['station_province'].to_numpy()\n")      
-            python_job.write("nc_ds = netCDF4.Dataset(objProcess.source_dirs.split(';')[0] + '/wrfout_d01_'\
-+ (objProcess.date_start + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00'))\n")
-            python_job.write("objProcess.sitecols = numpy.zeros([objProcess.siteIDs.shape[0]])\n")
-            python_job.write("objProcess.siterows = numpy.zeros([objProcess.siteIDs.shape[0]])\n")
-            python_job.write("lat2D = wrf.to_np(wrf.getvar(nc_ds, 'lat'))\n")
-            python_job.write("lon2D = wrf.to_np(wrf.getvar(nc_ds, 'lon'))\n")
-            python_job.write("for site_index in range(objProcess.siteIDs.shape[0]):\n")
-            python_job.write("    site_lon = objProcess.sitelons[site_index]\n")
-            python_job.write("    site_lat = objProcess.sitelats[site_index]\n")
-            python_job.write("    difflat = site_lat - lat2D\n")
-            python_job.write("    difflon = site_lon - lon2D\n")
-            python_job.write("    rad = numpy.multiply(difflat,difflat) + numpy.multiply(difflon,difflon)\n")
-            python_job.write("    indexSta = tuple(numpy.squeeze(numpy.array(numpy.where(rad==numpy.min(rad)))))\n")
-            python_job.write("    objProcess.sitecols[site_index] = int(indexSta[1])\n")
-            python_job.write("    objProcess.siterows[site_index] = int(indexSta[0])\n")
-            python_job.write("df_obs_total = pandas.read_csv(objProcess.output_dir + '/csv/official_met/OBS_Records.csv')\n")
-            # 开始逐个站点提交时序图任务进程
-            python_job.write("def call_timeseries(factor_index, site_index, df_simu_site, df_obs_total, savedir):\n")
-            python_job.write("    objProcess.Timeseries(factor_index, site_index, df_simu_site, df_obs_total, savedir)\n")
-            python_job.write("pool2 = multiprocessing.Pool(processes = min(objProcess.siteIDs.shape[0],64))\n")
-            python_job.write("df_simu_total = pandas.DataFrame()\n")
-            python_job.write("if objProcess.siteIDs.shape[0]>1500:\n")
-            python_job.write("    for site_index in range(1500):\n")
-            python_job.write("        if (((objProcess.sites_includedprovinces == ['all']) or \\\n")
-            python_job.write("            (objProcess.siteprovince[site_index] in objProcess.sites_includedprovinces)) and \\\n")
-            python_job.write("            ((objProcess.sites_includedcities == ['all']) or (objProcess.sitecities[site_index] \\\n")
-            python_job.write("             in objProcess.sites_includedcities))):\n")
-            python_job.write("           COL = int(objProcess.sitecols[site_index])\n")
-            python_job.write("           ROW = int(objProcess.siterows[site_index])\n")
-            python_job.write("           df_simu_site = pandas.DataFrame()\n")
-            python_job.write("           for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("               df_simu_single = pandas.DataFrame({'source_index':source_index, 'SiteCode': objProcess.siteIDs[site_index], \
-'TimePoint' : objProcess.date_cover,'" + factor_name + "': main_nparray[source_index, :, :, ROW, COL].flatten('A')})\n")
-            python_job.write("               df_simu_site = pandas.concat([df_simu_single, df_simu_site])\n")
-            python_job.write("               df_simu_total = pandas.concat([df_simu_single, df_simu_total])\n")
-            python_job.write("           pool2.apply_async(call_timeseries, args=(" + str(factor_index) + ", site_index, df_simu_site, df_obs_total, objProcess.output_dir + '/Timeseries/official_met', ))\n")
-            python_job.write("    pool2.close()\n")
-            python_job.write("    pool2.join()\n")
-            python_job.write("    pool3 = multiprocessing.Pool(processes = 64)\n")
-            python_job.write("    for site_index in range(1500,objProcess.siteIDs.shape[0]):\n")
-            python_job.write("        if (((objProcess.sites_includedprovinces == ['all']) or \\\n")
-            python_job.write("            (objProcess.siteprovince[site_index] in objProcess.sites_includedprovinces)) and \\\n")
-            python_job.write("            ((objProcess.sites_includedcities == ['all']) or (objProcess.sitecities[site_index] \\\n")
-            python_job.write("             in objProcess.sites_includedcities))):\n")
-            python_job.write("           COL = int(objProcess.sitecols[site_index])\n")
-            python_job.write("           ROW = int(objProcess.siterows[site_index])\n")
-            python_job.write("           df_simu_site = pandas.DataFrame()\n")
-            python_job.write("           for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("               df_simu_single = pandas.DataFrame({'source_index':source_index, 'SiteCode': objProcess.siteIDs[site_index], \
-'TimePoint' : objProcess.date_cover,'" + factor_name + "': main_nparray[source_index, :, :, ROW, COL].flatten('A')})\n")
-            python_job.write("               df_simu_site = pandas.concat([df_simu_single, df_simu_site])\n")
-            python_job.write("               df_simu_total = pandas.concat([df_simu_single, df_simu_total])\n")
-            python_job.write("           pool3.apply_async(call_timeseries, args=(" + str(factor_index) + ", site_index, df_simu_site, df_obs_total, objProcess.output_dir + '/Timeseries/official_met', ))\n")
-            python_job.write("    pool3.close()\n")
-            python_job.write("    pool3.join()\n")
-            python_job.write("else:\n")
-            python_job.write("    for site_index in range(objProcess.siteIDs.shape[0]):\n")
-            python_job.write("        if (((objProcess.sites_includedprovinces == ['all']) or \\\n")
-            python_job.write("            (objProcess.siteprovince[site_index] in objProcess.sites_includedprovinces)) and \\\n")
-            python_job.write("            ((objProcess.sites_includedcities == ['all']) or (objProcess.sitecities[site_index] \\\n")
-            python_job.write("             in objProcess.sites_includedcities))):\n")
-            python_job.write("           COL = int(objProcess.sitecols[site_index])\n")
-            python_job.write("           ROW = int(objProcess.siterows[site_index])\n")
-            python_job.write("           df_simu_site = pandas.DataFrame()\n")
-            python_job.write("           for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("               df_simu_single = pandas.DataFrame({'source_index':source_index, 'SiteCode': objProcess.siteIDs[site_index], \
-'TimePoint' : objProcess.date_cover,'" + factor_name + "': main_nparray[source_index, :, :, ROW, COL].flatten('A')})\n")
-            python_job.write("               df_simu_site = pandas.concat([df_simu_single, df_simu_site])\n")
-            python_job.write("               df_simu_total = pandas.concat([df_simu_single, df_simu_total])\n")
-            python_job.write("           pool2.apply_async(call_timeseries, args=(" + str(factor_index) + ", site_index, df_simu_site, df_obs_total, objProcess.output_dir + '/Timeseries/official_met', ))\n")
-            python_job.write("    pool2.close()\n")
-            python_job.write("    pool2.join()\n")            
-            python_job.write("objProcess.Scatter(" + str(factor_index) + ", df_simu_total, df_obs_total, objProcess.output_dir + '/Scatter/official_met')\n")
-            python_job.write("df_simu_total.to_csv(objProcess.output_dir + '/csv/official_met/' + '" + factor_name + "_Simu_Stations.csv', sep=',', index=False, header=True)\n")
-            python_job.write("print('well done!!!')\n") 
-            python_job.close()
-            os.chmod(python_file, stat.S_IRWXO+stat.S_IRWXG+stat.S_IRWXU)
-            slurm_file = self.output_dir + '/' + job_tag + '.slurm'
-            slurm_job = open(slurm_file, 'w')
-            slurm_job.write("#!/bin/bash\n")
-            slurm_job.write("#SBATCH --job-name=sites\n")
-            slurm_job.write("#SBATCH --time=01:00:00\n")     # maximum running time of two hours
-            slurm_job.write("#SBATCH --partition=64c512g\n")
-            slurm_job.write("#SBATCH --mail-type=end\n")
-            slurm_job.write("#SBATCH --mail-user=\n")
-            slurm_job.write("#SBATCH --output=" + self.output_dir + "/%j.out\n")
-            slurm_job.write("#SBATCH --error=" + self.output_dir + "/%j.err\n")
-            slurm_job.write("#SBATCH -N 1\n")
-            slurm_job.write("#SBATCH --exclusive\n")
-            slurm_job.write('/dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/python ' + self.output_dir + '/' + job_tag + '.py' \
-                + ' >& ' + self.output_dir + '/' + job_tag + '.log\n')
-            slurm_job.close()
-            os.system('sbatch ' + slurm_file)
-
-    def supersite_validation(self): # 提取大气超级站所有数据并进行画图
-        if self.sites_includedprovinces != ['all']:
-            where_str = 'station_code is not null and station_province in ' \
-                + str(self.sites_includedprovinces).replace('[','(').replace(']',')')
-        else:
-            where_str = 'station_code is not null'
-        if self.sites_includedcities != ['all']:
-            where_str = where_str + ' and station_city in ' \
-                + str(self.sites_includedcities).replace('[','(').replace(']',')')
-        ds_station = pandas.read_sql_query('SELECT * FROM Supersite_Sites WHERE ' \
-                + where_str + ' ORDER BY station_code', airdb_engine2)
-        ds_station.to_csv(self.output_dir + '/csv/supersite_air/OBS_Stations.csv', sep=',', index=False, header=True)
-        ds_station = pandas.read_csv(self.output_dir + '/csv/supersite_air/OBS_Stations.csv')
-        self.siteIDs = ds_station['station_code'].to_numpy().astype(str)
-        ds_sql = "SELECT A.SO2_ug_m3,A.NO_ug_m3,A.NO2_ug_m3,A.O3_ug_m3,A.CO_mg_m3,A.HNO3_ug_m3,A.NH3_ug_m3,A.PM10_ug_m3,\
-            A.PM25_ug_m3,A.SO4_ug_m3,A.NO3_ug_m3,A.NH4_ug_m3,A.OC_ug_m3,A.EC_ug_m3,(A.SO2_ug_m3*1/2+A.SO4_ug_m3*1/3) AS TS,\
-            (A.NO_ug_m3*14/(14+16)+A.NO2_ug_m3*14/(14+32)+A.HNO3_ug_m3*14/(14+1+48)+A.NO3_ug_m3*14/(14+48)) AS TNN,\
-            (A.NH3_ug_m3*14/17+A.NH4_ug_m3*14/18) AS TAN, A.station_code,A.obs_time FROM Supersite_PM_GAS as A " \
-                + "WHERE A.station_code IN ('" + "','".join(self.siteIDs) + "') AND A.obs_time BETWEEN '" \
-                + (self.date_start + datetime.timedelta(hours=8)).strftime("%Y-%m-%d %H:00") + "' AND '" + (self.date_end + datetime.timedelta(hours=8)).strftime("%Y-%m-%d %H:00") \
-                + "' ORDER BY A.station_code, A.obs_time"
-        self.obs = pandas.DataFrame(numpy.array(pandas.read_sql_query(ds_sql, airdb_engine2)))
-        self.obs.columns=['SO2','NO','NO2','O3','CO','HNO3','NH3','PM10','PM25','PM25_SO4','PM25_NO3','PM25_NH4','PM25_OC','PM25_EC','TS','TNN','TAN','SiteCode','TimePoint']
-        self.obs.drop_duplicates(subset=['SiteCode','TimePoint'],keep='first',inplace=True)
-        self.obs.to_csv(self.output_dir + '/csv/supersite_air/OBS_Records.csv', sep=',', index=False, header=True)
-        
-        # 提取观测点所在网格的模拟时段的所有指标数据
-
-        for factor_index in range(len(self.factors)):
-            factor_name = self.factors[factor_index].split('|')[0]
-            job_tag = 'supersite_' + factor_name
-            python_file = self.output_dir + '/' + job_tag + '.py'
-            python_job = open(python_file, 'w')
-            python_job.write("import os\n")
-            python_job.write("import datetime\n")
-            python_job.write("import sys\n") 
-            python_job.write('sys.path.append("/dssg/home/acct-esehazenet/share/public_code/Class_files@Hazenet")\n')
-            python_job.write("import post_process\n")
-            python_job.write("import matplotlib\n")
-            python_job.write("import multiprocessing\n")
-            python_job.write("import matplotlib.colors as col\n")
-            python_job.write("import glob\n")
-            python_job.write("import wrf\n")
-            python_job.write("import pyproj\n")
-            python_job.write("import netCDF4\n")
-            python_job.write("import numpy\n")
-            python_job.write("import ctypes\n")
-            python_job.write("import pandas\n")
-            python_job.write("import time\n")
-            python_job.write("objProcess = post_process.Post_Process('" + self.data_type \
-                + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') \
-                + "','" + str(self.source_dirs) + "')\n")
-            python_job.write("objProcess.factors = " + str(self.factors) + "\n")
-            python_job.write("objProcess.output_dir = '" + str(self.output_dir) + "'\n")
-            python_job.write("objProcess.sites_includedprovinces = " + str(self.sites_includedprovinces) + "\n")
-            python_job.write("objProcess.sites_includedcities = " + str(self.sites_includedcities) + "\n")
-            python_job.write("days_count = (objProcess.date_end - objProcess.date_start).days + 1 \n")
-            python_job.write("shared_array_base = multiprocessing.Array(ctypes.c_double, len(objProcess.source_dirs.split(';'))*days_count\
-*24*objProcess.Domain_NROWS*objProcess.Domain_NCOLS, lock=False)\n")
-            python_job.write("def call_extract_2dsimu(source_index, factor_index, day_index):\n")
-            python_job.write("    main_nparray = numpy.frombuffer(shared_array_base, dtype=ctypes.c_double)\n")
-            python_job.write("    main_nparray = main_nparray.reshape(len(objProcess.source_dirs.split(';')),days_count,24,\
-objProcess.Domain_NROWS, objProcess.Domain_NCOLS)\n")
-            python_job.write("    main_nparray[source_index,day_index,:,:,:] = objProcess.extract_2dsimu(str(source_index), 1, factor_index, day_index,'data')\n")
-            python_job.write("pool = multiprocessing.Pool(processes = days_count)\n")
-            python_job.write("for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("    for day_index in range(days_count):\n")
-            python_job.write("        pool.apply_async(call_extract_2dsimu, args=(source_index," + str(factor_index) + ",day_index, ))\n")
-            python_job.write("pool.close()\n")
-            python_job.write("pool.join()\n")
-            python_job.write("main_nparray = numpy.frombuffer(shared_array_base, dtype=ctypes.c_double)\n")
-            python_job.write("main_nparray = main_nparray.reshape(len(objProcess.source_dirs.split(';')),days_count,\
-24, objProcess.Domain_NROWS, objProcess.Domain_NCOLS)\n")
-            # 加载观测数据集
-            python_job.write("ds_station = pandas.read_csv(objProcess.output_dir + '/csv/supersite_air/OBS_Stations.csv')\n")
-            python_job.write("objProcess.siteIDs = ds_station['station_code'].to_numpy().astype(str)\n")
-            python_job.write("objProcess.sitenames = ds_station['station_name'].to_numpy()\n")
-            python_job.write("objProcess.sitelats = ds_station['station_lat'].to_numpy()\n")
-            python_job.write("objProcess.sitelons = ds_station['station_lon'].to_numpy()\n")
-            python_job.write("objProcess.sitecities = ds_station['station_city'].to_numpy()\n")
-            python_job.write("objProcess.siteprovince = ds_station['station_province'].to_numpy()\n")
-            python_job.write("if objProcess.data_type == 'CMAQ_BAU':\n")
-            python_job.write("   LCCProj = pyproj.Proj(proj='lcc', lat_1=objProcess.Domain_TRUELAT1, lat_2=objProcess.Domain_TRUELAT2,\
-lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6370000)\n")
-            python_job.write("   lcc_x, lcc_y = LCCProj(objProcess.sitelons, objProcess.sitelats)\n")
-            python_job.write("   objProcess.sitecols = numpy.trunc((lcc_x - objProcess.Domain_XORIG) / objProcess.Domain_DX).astype(int)\n")
-            python_job.write("   objProcess.siterows = numpy.trunc((lcc_y - objProcess.Domain_YORIG) / objProcess.Domain_DY).astype(int)\n")
-            python_job.write("   condition = (objProcess.sitecols >= 0) & (objProcess.sitecols < objProcess.Domain_NCOLS) \
-& (objProcess.siterows >= 0) & (objProcess.siterows < objProcess.Domain_NROWS)\n")
-            python_job.write("   selected_indices = numpy.where(condition)[0]\n")
-            python_job.write("   objProcess.siteIDs = objProcess.siteIDs[selected_indices]\n")
-            python_job.write("   objProcess.sitenames = objProcess.sitenames[selected_indices]\n")
-            python_job.write("   objProcess.sitelats = objProcess.sitelats[selected_indices]\n")
-            python_job.write("   objProcess.sitelons = objProcess.sitelons[selected_indices]\n")
-            python_job.write("   objProcess.sitecities = objProcess.sitecities[selected_indices]\n")
-            python_job.write("   objProcess.siteprovince = objProcess.siteprovince[selected_indices]\n")
-            python_job.write("   objProcess.sitecols = objProcess.sitecols[selected_indices]\n")
-            python_job.write("   objProcess.siterows = objProcess.siterows[selected_indices]\n")
-            python_job.write("df_obs_total = pandas.read_csv(objProcess.output_dir + '/csv/supersite_air/OBS_Records.csv')\n")
-            # 开始逐个站点提交时序图任务进程
-            python_job.write("def call_timeseries(factor_index, site_index, df_simu_site, df_obs_total, savedir):\n")
-            python_job.write("    objProcess.Timeseries(factor_index, site_index, df_simu_site, df_obs_total, savedir)\n")
-            python_job.write("pool2 = multiprocessing.Pool(processes = min(objProcess.siteIDs.shape[0],64))\n")
-            python_job.write("df_simu_total = pandas.DataFrame()\n")
-            python_job.write("if objProcess.siteIDs.shape[0]>1500:\n")
-            python_job.write("    for site_index in range(1500):\n")
-            python_job.write("        if (((objProcess.sites_includedprovinces == ['all']) or \\\n")
-            python_job.write("            (objProcess.siteprovince[site_index] in objProcess.sites_includedprovinces)) and \\\n")
-            python_job.write("            ((objProcess.sites_includedcities == ['all']) or (objProcess.sitecities[site_index] \\\n")
-            python_job.write("             in objProcess.sites_includedcities))):\n")
-            python_job.write("           COL = int(objProcess.sitecols[site_index])\n")
-            python_job.write("           ROW = int(objProcess.siterows[site_index])\n")
-            python_job.write("           df_simu_site = pandas.DataFrame()\n")
-            python_job.write("           for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("               df_simu_single = pandas.DataFrame({'source_index':source_index, 'SiteCode': objProcess.siteIDs[site_index], \
-'TimePoint' : objProcess.date_cover,'" + factor_name + "': main_nparray[source_index, :, :, ROW, COL].flatten('A')})\n")
-            python_job.write("               df_simu_site = pandas.concat([df_simu_single, df_simu_site])\n")
-            python_job.write("               df_simu_total = pandas.concat([df_simu_single, df_simu_total])\n")
-            python_job.write("           pool2.apply_async(call_timeseries, args=(" + str(factor_index) + ", site_index, df_simu_site, df_obs_total, objProcess.output_dir + '/Timeseries/supersite_air', ))\n")
-            python_job.write("    pool2.close()\n")
-            python_job.write("    pool2.join()\n")
-            python_job.write("    pool3 = multiprocessing.Pool(processes = 64)\n")
-            python_job.write("    for site_index in range(1500,objProcess.siteIDs.shape[0]):\n")
-            python_job.write("        if (((objProcess.sites_includedprovinces == ['all']) or \\\n")
-            python_job.write("            (objProcess.siteprovince[site_index] in objProcess.sites_includedprovinces)) and \\\n")
-            python_job.write("            ((objProcess.sites_includedcities == ['all']) or (objProcess.sitecities[site_index] \\\n")
-            python_job.write("             in objProcess.sites_includedcities))):\n")
-            python_job.write("           COL = int(objProcess.sitecols[site_index])\n")
-            python_job.write("           ROW = int(objProcess.siterows[site_index])\n")
-            python_job.write("           df_simu_site = pandas.DataFrame()\n")
-            python_job.write("           for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("               df_simu_single = pandas.DataFrame({'source_index':source_index, 'SiteCode': objProcess.siteIDs[site_index], \
-'TimePoint' : objProcess.date_cover,'" + factor_name + "': main_nparray[source_index, :, :, ROW, COL].flatten('A')})\n")
-            python_job.write("               df_simu_site = pandas.concat([df_simu_single, df_simu_site])\n")
-            python_job.write("               df_simu_total = pandas.concat([df_simu_single, df_simu_total])\n")
-            python_job.write("           pool3.apply_async(call_timeseries, args=(" + str(factor_index) + ", site_index, df_simu_site, df_obs_total, objProcess.output_dir + '/Timeseries/supersite_air', ))\n")
-            python_job.write("    pool3.close()\n")
-            python_job.write("    pool3.join()\n")
-            python_job.write("else:\n")
-            python_job.write("    for site_index in range(objProcess.siteIDs.shape[0]):\n")
-            python_job.write("        if (((objProcess.sites_includedprovinces == ['all']) or \\\n")
-            python_job.write("            (objProcess.siteprovince[site_index] in objProcess.sites_includedprovinces)) and \\\n")
-            python_job.write("            ((objProcess.sites_includedcities == ['all']) or (objProcess.sitecities[site_index] \\\n")
-            python_job.write("             in objProcess.sites_includedcities))):\n")
-            python_job.write("           COL = int(objProcess.sitecols[site_index])\n")
-            python_job.write("           ROW = int(objProcess.siterows[site_index])\n")
-            python_job.write("           df_simu_site = pandas.DataFrame()\n")
-            python_job.write("           for source_index in range(len(objProcess.source_dirs.split(';'))):\n")
-            python_job.write("               df_simu_single = pandas.DataFrame({'source_index':source_index, 'SiteCode': objProcess.siteIDs[site_index], \
-'TimePoint' : objProcess.date_cover,'" + factor_name + "': main_nparray[source_index, :, :, ROW, COL].flatten('A')})\n")
-            python_job.write("               df_simu_site = pandas.concat([df_simu_single, df_simu_site])\n")
-            python_job.write("               df_simu_total = pandas.concat([df_simu_single, df_simu_total])\n")
-            python_job.write("           pool2.apply_async(call_timeseries, args=(" + str(factor_index) + ", site_index, df_simu_site, df_obs_total, objProcess.output_dir + '/Timeseries/supersite_air', ))\n")
-            python_job.write("    pool2.close()\n")
-            python_job.write("    pool2.join()\n")            
-            python_job.write("objProcess.Scatter(" + str(factor_index) + ", df_simu_total, df_obs_total, objProcess.output_dir + '/Scatter/supersite_air')\n")
-            python_job.write("df_simu_total.to_csv(objProcess.output_dir + '/csv/supersite_air/' + '" + factor_name + "_Simu_Stations.csv', sep=',', index=False, header=True)\n")
-            python_job.write("print('well done!!!')\n") 
-            python_job.close()
-            os.chmod(python_file, stat.S_IRWXO+stat.S_IRWXG+stat.S_IRWXU)
-            slurm_file = self.output_dir + '/' + job_tag + '.slurm'
-            slurm_job = open(slurm_file, 'w')
-            slurm_job.write("#!/bin/bash\n")
-            slurm_job.write("#SBATCH --job-name=sites\n")
-            slurm_job.write("#SBATCH --time=01:00:00\n")     # maximum running time of two hours
-            slurm_job.write("#SBATCH --partition=64c512g\n")
-            slurm_job.write("#SBATCH --mail-type=end\n")
-            slurm_job.write("#SBATCH --mail-user=\n")
-            slurm_job.write("#SBATCH --output=" + self.output_dir + "/%j.out\n")
-            slurm_job.write("#SBATCH --error=" + self.output_dir + "/%j.err\n")
-            slurm_job.write("#SBATCH -N 1\n")
-            slurm_job.write("#SBATCH --exclusive\n")
-            slurm_job.write('/dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/python ' + self.output_dir + '/' + job_tag + '.py' \
-                + ' >& ' + self.output_dir + '/' + job_tag + '.log\n')
-            slurm_job.close()
-            os.system('sbatch ' + slurm_file)
-          
+            
     def Timeseries(self, factor_index, site_index, df_obs, df_simu_sites):  # 各站点各物种的时序对比图        
         factor_name = self.factors[factor_index].split('|')[0]
         factor_unit = self.factors[factor_index].split('|')[1]
-        factor_desc = self.factors[factor_index].split('|')[3]
         site_name = self.sitenames[site_index]
         site_province = self.siteprovince[site_index]
         site_city = self.sitecities[site_index]
@@ -1181,11 +924,12 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         x.loc[:,'TimePoint'] = pandas.to_datetime(df_obs.loc[:,'TimePoint'], format="%Y-%m-%d %H:%M:%S") 
         df_obs = x
         if factor_name in df_obs.columns:
+            df_obs = df_obs.dropna(subset=[factor_name])
             df_obs = df_obs.drop(df_obs[(df_obs[factor_name]<-10000)|(df_obs[factor_name]>200000)].index) # 删除异常值的行
             if df_obs[[factor_name]].count().iloc[0] == 0 and len(self.source_dirs.split(';'))==1:
                 return   # 如果观测站没有数据，且只有一个模拟情景，无需画图提前结束
             # fill the missing obs datatime with NAN values     
-            if len(df_obs) != len(self.date_cover):           
+            if len(df_obs) != len(self.date_cover):
                 dt_cover = pandas.DataFrame(self.date_cover)
                 dt_cover.columns = ['TimePoint']
                 df_obs = pandas.merge(dt_cover, df_obs, how='left', on='TimePoint')
@@ -1201,8 +945,7 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
             + 'E, ' + str(site_lat) + 'N)', fontsize=23, pad=(len(self.source_dirs.split(';'))+1)*35,fontproperties=heiti_font)        
         color_list = ['red','blue','green','black']
         linestyle = ['-',':','--','-.']        
-        df_simu_sites = df_simu_sites[df_simu_sites['factor_index'].astype(str) == str(factor_index) \
-            & (df_simu_sites['SiteCode'] == str(self.siteIDs[site_index]))]
+        df_simu_sites = df_simu_sites[(df_simu_sites['factor_index'].astype(str) == str(factor_index)) & (df_simu_sites['SiteCode'].astype(str) == str(self.siteIDs[site_index]))]
         df_simu_sites = df_simu_sites.rename(columns={'factor_value':factor_name})
         df_simu_sites.sort_values(by=['TimePoint','source_index'],ascending=[True,True])
         df_simu_sites = df_simu_sites.drop(['SiteCode'], axis=1)
@@ -1217,8 +960,9 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
             df_simu_source.reset_index(drop=True,inplace=True)      
             ax.plot(self.date_cover, df_simu_source[factor_name], linestyle[source_index], color=color_list[source_index],\
                 label=self.source_dirs.split(';')[source_index].split('/')[-1], linewidth=3)
-        factor_min = min(df_obs[factor_name+ "_obs"].min()*0.9, factor_min)
-        factor_max = max(df_obs[factor_name+ "_obs"].max()*1.1, factor_max)
+        if df_obs[[factor_name + "_obs"]].count().iloc[0] > 0:
+            factor_min = min(df_obs[factor_name + "_obs"].min()*0.9, factor_min)
+            factor_max = max(df_obs[factor_name + "_obs"].max()*1.1, factor_max)
         ax.plot_date(self.date_cover, df_obs, label='Observation', color=color_list[-1])
         ax.legend(fontsize=20, borderpad=0, ncol=1,frameon=0, facecolor='white', framealpha=0, \
             bbox_to_anchor=(0., 1, 1., (len(self.source_dirs.split(';'))+1)*0.06), loc='upper center')
@@ -1244,7 +988,7 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
     def Scatter(self, factor_index, source_index, df_obs, df_simu_sites): # 某情景某物种所有观测数据和模拟数据的散点对比图
         factor_name = self.factors[factor_index].split('|')[0]
         factor_unit = self.factors[factor_index].split('|')[1]
-        factor_desc = self.factors[factor_index].split('|')[3]       
+        factor_desc = self.factors[factor_index].split('|')[3]
         if factor_name not in df_obs.columns or df_obs[factor_name].count() < 1: # 如果没有观测数据吗，就跳出该物种
             return
         df_obs = df_obs.dropna(subset=[factor_name])
@@ -1255,12 +999,12 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         x.loc[:,'TimePoint'] = pandas.to_datetime(df_obs.loc[:,'TimePoint'], format="%Y-%m-%d %H:%M:%S") 
         df_obs = x
         df_obs['SiteCode'] = df_obs['SiteCode'].astype(str)
-        df_simu = df_simu_sites[df_simu_sites['source_index'].astype(str) == str(source_index)]
-        df_simu = df_simu_sites[df_simu_sites['factor_index'].astype(str) == str(factor_index)]
+        df_simu = df_simu_sites[(df_simu_sites['factor_index'].astype(str) == str(factor_index)) & (df_simu_sites['source_index'].astype(str) == str(source_index))]
         df_simu = df_simu.reset_index(drop=True)
         df_simu = df_simu.sort_values(by=['TimePoint','SiteCode'],ascending=[True,True])
         df_simu = df_simu.rename(columns={'factor_value':factor_name})
         df_simu = pandas.merge(df_simu, df_obs, on=['TimePoint','SiteCode'])  # 保证两个数据集大小一致
+        df_simu.to_csv(self.output_dir + '/CSV/' + factor_name + '_source' + str(source_index) + '.csv', sep=',', index=False, header=True)
         df_obs = df_simu[[factor_name+'_obs']]
         df_simu = df_simu[[factor_name]]
         x = df_obs[factor_name + '_obs'].values
@@ -1300,7 +1044,7 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         else: z = calc_kernel(xy)
         idx = z.argsort()
         x, y, z = x[idx], y[idx], z[idx]
-        dense=ax.scatter(x,y,5,marker='o',c=z*100,linewidths=0,cmap='jet') 
+        dense=ax.scatter(x,y,8,marker='o',c=z*100,linewidths=0,cmap='jet') 
         clb=plt.colorbar(plt.cm.ScalarMappable(cmap='jet', norm=matplotlib.colors.Normalize(vmin=0, vmax=100)),ax=ax)
         plt.plot([min_value, max_value],[min_value, max_value],color='black',linestyle='--',lw=2)
         plt.plot(numpy.array([min_value, max_value]).reshape(-1, 1), lr.predict(numpy.array([min_value, max_value]).reshape(-1, 1)),'red',lw=2)
@@ -1330,49 +1074,45 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         ax.xaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
         ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
         ax.set_title(factor_desc + '(' + factor_name + '), (' + self.date_start.strftime('%Y-%m-%d') +' ~ '\
-            + self.date_end.strftime('%Y-%m-%d') + ')', fontsize=10, pad=5)
+            + self.date_end.strftime('%Y-%m-%d') + ')', fontsize=12, fontproperties=self.timesnr_font, pad=5)
         figname = 'Scatter_' + factor_name.replace('_','-') + '_' + self.data_type + '_' + self.source_dirs.split(';')[source_index].split('/')[-1] + '.png'
-        plt.savefig(self.output_dir + '/Scatter/' + figname,dpi=800,bbox_inches='tight')            
-
-    # Extract the data record from corresponding nc file 
-    def extract_2dsimu(self, source_index, layer_index, factor_index, day_index):
-        init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
-        if not os.path.exists(init_file):
-            init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
-        if not os.path.exists(init_file):
-            print('the error of data sources!!')
-            sys.exit()
-        else:
-            nc_ds = netCDF4.Dataset(init_file)
-        Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
-        Domain_NROWS = int(nc_ds.getncattr('NROWS'))
-        ds_target = numpy.zeros([24, Domain_NROWS, Domain_NCOLS])       
+        plt.savefig(self.output_dir + '/Scatter/' + figname,dpi=800,bbox_inches='tight')       
+    
+    def extract_2dsimu(self, source_index, layer_index, factor_index, day_index): # Extract the data record from corresponding nc file 
         current_day  = self.date_start + datetime.timedelta(days=day_index)
         factor_name = self.factors[factor_index].split('|')[0]
         layer = self.extracted_layers[layer_index]
-        file_path = self.source_dirs.split(';')[int(source_index)]
-                   
+        file_path = self.source_dirs.split(';')[int(source_index)]                   
         if self.data_type == 'WRF': # for WRF
             hour_start = 12 # start from 12 for our wrf running
-            if (self.process_type == '绝对值') or ('-' not in source_index):  #绝对值
+            if ('-' not in str(source_index)):  #绝对值
                 nc_file = file_path + '/wrfout_d01_' \
                     + (current_day + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00')
-                nc_ds = netCDF4.Dataset(nc_file)                
-                if factor_name in ['rh','tc','pressure']:
-                    ds = wrf.getvar(nc_ds, factor_name, timeidx = wrf.ALL_TIMES)
-                    ds_target[:]  = wrf.to_np(ds[hour_start:-1,int(layer)-1,:])  
-                elif factor_name in ['PBLH']:
-                    ds = wrf.getvar(nc_ds, factor_name, timeidx = wrf.ALL_TIMES)
-                    ds_target[:]  = wrf.to_np(ds[hour_start:-1,:])  
-                elif factor_name in ['ws','wd']:
+                nc_ds = netCDF4.Dataset(nc_file)
+                Domain_NCOLS = int(nc_ds.getncattr('WEST-EAST_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['west_east']) also works
+                Domain_NROWS = int(nc_ds.getncattr('SOUTH-NORTH_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['south_north']) also works
+                ds_target = numpy.zeros([24, Domain_NROWS, Domain_NCOLS])
+                ds = xarray.open_dataset(nc_file).isel({'Time': slice(13, None)}).sel(bottom_top=int(layer)-1)
+                if factor_name == 'TC':
+                    ds_target[:] = (ds['T']+300) * ((ds['P'] + ds['PB'])/100000)**(2/7) - 273.15
+                if factor_name == 'RH':
+                    TK = (ds['T']+300) * ((ds['P'] + ds['PB'])/100000)**(2/7)
+                    ds_target[:] = 100 * ((ds['P'] + ds['PB']) * ds['QVAPOR']/(ds['QVAPOR'] * (1.-0.622) + 0.622))/(611.2 * numpy.exp(17.67 * (TK-273.15)/(TK-29.65)))
+                if factor_name == 'Pressure':
+                    ds_target[:]  = (ds['P'] + ds['PB']) / 100
+                if factor_name == 'PBLH':
+                    ds_target[:]  = ds['PBLH']
+                if factor_name == 'WS':
                     ds = wrf.getvar(nc_ds, 'wspd_wdir', units = "m s-1", timeidx = wrf.ALL_TIMES)
-                    if factor_name == 'ws':
-                        ds_target[:]  = wrf.to_np(ds[0,hour_start:-1,int(layer)-1,:])
-                    if factor_name == 'wd':
-                        ds_target[:]  = wrf.to_np(ds[1,hour_start:-1,int(layer)-1,:])
+                    ds_target[:]  = wrf.to_np(ds[0,hour_start:-1,int(layer)-1,:])
+                if factor_name == 'WD':
+                    ds = wrf.getvar(nc_ds, 'wspd_wdir', units = "m s-1", timeidx = wrf.ALL_TIMES)
+                    ds_target[:]  = wrf.to_np(ds[1,hour_start:-1,int(layer)-1,:])  
                 nc_ds.close()
-
-            if (self.process_type == '差值') or ('-' in str(source_index)):   #差值
+                nc_ds = None
+            if ('-' in str(source_index)):  #差值
+                file_path1 = self.source_dirs.split(';')[int(source_index.split('-')[0])]
+                file_path2 = self.source_dirs.split(';')[int(source_index.split('-')[1])]
                 nc_file1 = file_path1 + '/wrfout_d01_' + (current_day + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00')
                 nc_ds1 = netCDF4.Dataset(nc_file1)
                 nc_file2 = file_path2 + '/wrfout_d01_' + (current_day + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00')
@@ -1394,8 +1134,10 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
                         ds_target[:]  = wrf.to_np(ds1[1,hour_start:-1,int(layer)-1,:] - ds2[1,hour_start:-1,int(layer)-1,:])
                 nc_ds1.close() 
                 nc_ds2.close()
+                nc_ds1 = None
+                nc_ds2 = None
 
-        if self.data_type == 'CMAQ_BAU':
+        if self.data_type == 'CMAQ_regularsites' or self.data_type == 'CMAQ_supersites':
             aconc_file = file_path + '/CCTM_ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc'
             if not os.path.exists(aconc_file):
                 aconc_file = file_path + '/ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc' 
@@ -1406,6 +1148,10 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
             if not os.path.exists(airdensity_file):
                 print('metcro3d file was not found in the current folder!!!')
                 sys.exit()
+            nc_ds = netCDF4.Dataset(aconc_file)
+            Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
+            Domain_NROWS = int(nc_ds.getncattr('NROWS'))
+            ds_target = numpy.zeros([24, Domain_NROWS, Domain_NCOLS])
             ds_aconc = xarray.open_dataset(aconc_file).sel(LAY=int(layer)-1)
             ds_density = xarray.open_dataset(airdensity_file).sel(LAY=int(layer)-1)
             ds_apm = xarray.open_dataset(apm_file).sel(LAY=0)
@@ -1438,7 +1184,7 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
                 if 'AERODIAM' in apm_file: AE_version ='AE5'
                 ds_target[:] = self.extract_pm(factor_name, ds_aconc, ds_density, ds_apm, AE_version)            
             
-            if (self.process_type == '差值'):   #差值
+            if ('-' in str(source_index)):   #差值
                 aconc_file1 = file_path1 + '/CCTM_ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc'
                 aconc_file2 = file_path2 + '/CCTM_ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc'
                 if not os.path.exists(aconc_file1):
@@ -1489,7 +1235,7 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
                         - self.extract_pm(factor_name, ds_aconc2, ds_density2, ds_apm2, AE_version2)
 
         if self.data_type.lower() == 'adjoint_sensitivity':
-            if (self.process_type == '绝对值') or ('-' not in source_index):  #绝对值            
+            if ('-' not in str(source_index)):  #绝对值            
                 adjoint_file = self.output_dir + '/sensitivity_em_' + current_day.strftime('%Y-%m-%d') + '.nc'
                 ds_adjoint = xarray.open_dataset(adjoint_file).sel(LAY=0)
                 if factor_name == 'VOCs':
@@ -1500,7 +1246,7 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
                     ds_target[:] = ds_adjoint[factor_name][:]  
 
         if self.data_type.lower() == 'adjoint_semi_normalized_sensitivity':
-            if (self.process_type == '绝对值') or ('-' not in source_index):  #绝对值                          
+            if ('-' not in str(source_index)):  #绝对值                          
                 adjoint_file = self.output_dir + '/semi_normalized_sensitivity_em_' + current_day.strftime('%Y-%m-%d') + '.nc'
                 ds_adjoint = xarray.open_dataset(adjoint_file).sel(LAY=0)
                 if factor_name == 'VOCs':
@@ -1510,9 +1256,8 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
                 else:
                     ds_target[:] = ds_adjoint[factor_name][:]
         return ds_target
-
-    # Extract the data record from corresponding nc file 
-    def extract_pm(self, factor_name, ds_aconc, ds_density, ds_apm, AE_version):
+    
+    def extract_pm(self, factor_name, ds_aconc, ds_density, ds_apm, AE_version): # Reconstruct the PM2.5 and PM10 mass
         if AE_version =='AE5':  
             ds_apm = ds_apm[['PM25AT','PM25AC','PM25CO']]
         if AE_version =='AE6':
@@ -1716,24 +1461,37 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         df_admin = df[df['capital'] == 'admin']
         self.lon_admin = df_admin['lng'].to_list()
         self.lat_admin = df_admin['lat'].to_list()
-        init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
-        if not os.path.exists(init_file):
-            init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
-        if not os.path.exists(init_file):
-            print('the error of data sources!!')
-            sys.exit()
-        else:
-            nc_ds = netCDF4.Dataset(init_file)
-        Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
-        Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
-        Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
-        Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
-        Domain_XORIG = float(nc_ds.getncattr('XORIG'))
-        Domain_YORIG = float(nc_ds.getncattr('YORIG'))
-        Domain_DX = float(nc_ds.getncattr('XCELL'))
-        Domain_DY = float(nc_ds.getncattr('YCELL'))
-        Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
-        Domain_NROWS = int(nc_ds.getncattr('NROWS'))
+        if self.data_type == 'WRF':
+            nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[source_index] + '/wrfout_d01_' + (self.date_start + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00'))
+            Domain_NCOLS = int(nc_ds.getncattr('WEST-EAST_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['west_east']) also works
+            Domain_NROWS = int(nc_ds.getncattr('SOUTH-NORTH_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['south_north']) also works
+            Domain_CEN_LAT = float(nc_ds.getncattr('CEN_LAT'))
+            Domain_CEN_LON = float(nc_ds.getncattr('CEN_LON'))
+            Domain_TRUELAT1 = float(nc_ds.getncattr('TRUELAT1'))
+            Domain_TRUELAT2 = float(nc_ds.getncattr('TRUELAT2'))
+            Domain_XORIG = float(wrf.cartopy_xlim(wrfin=nc_ds)[0])
+            Domain_YORIG = float(wrf.cartopy_ylim(wrfin=nc_ds)[0])
+            Domain_DX = float(nc_ds.getncattr('DX'))
+            Domain_DY = float(nc_ds.getncattr('DY'))
+        if self.data_type == 'CMAQ_regularsites' or self.data_type == 'CMAQ_supersites': 
+            init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
+            if not os.path.exists(init_file):
+                init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
+            if not os.path.exists(init_file):
+                print('the error of data sources!!')
+                sys.exit()
+            else:
+                nc_ds = netCDF4.Dataset(init_file)
+            Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
+            Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
+            Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
+            Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
+            Domain_XORIG = float(nc_ds.getncattr('XORIG'))
+            Domain_YORIG = float(nc_ds.getncattr('YORIG'))
+            Domain_DX = float(nc_ds.getncattr('XCELL'))
+            Domain_DY = float(nc_ds.getncattr('YCELL'))
+            Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
+            Domain_NROWS = int(nc_ds.getncattr('NROWS'))
         LCCProj = pyproj.Proj(proj='lcc', lat_1=Domain_TRUELAT1, lat_2=Domain_TRUELAT2,lat_0=Domain_CEN_LAT, lon_0=Domain_CEN_LON, a=6370000, b=6370000)
         lcc_x_admin, lcc_y_admin = LCCProj(df_admin['lng'].to_list(), df_admin['lat'].to_list())
         self.name_admin = df_admin['city'].to_list()
@@ -1757,7 +1515,7 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
             else:
                 my_cmap_aplpha[i,-1] = 0.8
         self.my_cmap_aplpha = col.ListedColormap(my_cmap_aplpha,name='myowncolor')
-        if factor_name in ['PBLH','ws'] and ('-' not in source_index): self.my_cmap_aplpha = self.my_cmap_aplpha.reversed()
+        if factor_name in ['PBLH','ws'] and ('-' not in str(source_index)): self.my_cmap_aplpha = self.my_cmap_aplpha.reversed()
 
         lcc_proj = ccrs.LambertConformal(central_longitude=Domain_CEN_LON, central_latitude=Domain_CEN_LAT,\
                     standard_parallels=(Domain_TRUELAT1,Domain_TRUELAT2))
@@ -1826,12 +1584,11 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
     def draw_online_PNG(self, source_index, layer_index, factor_index, day_index, dataset):
         factor_name = self.factors[factor_index].split('|')[0]
         factor_unit = self.factors[factor_index].split('|')[1]
-        factor_desc = self.factors[factor_index].split('|')[3]
         layer = self.extracted_layers[layer_index]
         current_day  = self.date_start + datetime.timedelta(days=day_index)          
         minvalue = float(self.factors[factor_index].split('|')[2].split('~')[0])  
         maxvalue = float(self.factors[factor_index].split('|')[2].split('~')[1])
-        if self.process_type  == '差值':  # 如果比较差异，需要调整图例范围为原来的0.1    
+        if ('-' in str(source_index)):  # 如果比较差异，需要调整图例范围为原来的0.1    
             minvalue = minvalue * 0.1
             maxvalue = maxvalue * 0.1
         conc_color = ['white', 'blue', 'cyan', 'yellow', 'red', 'darkred']
@@ -1844,45 +1601,54 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
                 my_cmap_aplpha[i,-1] = 0.8
         self.my_cmap_aplpha = col.ListedColormap(my_cmap_aplpha,name='myowncolor')
         if factor_name in ['PBLH','ws'] and (not '-' in str(source_index)): self.my_cmap_aplpha = self.my_cmap_aplpha.reversed()
-        
-        init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
-        if not os.path.exists(init_file):
-            init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
-        if not os.path.exists(init_file):
-            print('the error of data sources!!')
-            sys.exit()
-        else:
-            nc_ds = netCDF4.Dataset(init_file)
-        Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
-        Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
-        Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
-        Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
-        Domain_XORIG = float(nc_ds.getncattr('XORIG'))
-        Domain_YORIG = float(nc_ds.getncattr('YORIG'))
-        Domain_DX = float(nc_ds.getncattr('XCELL'))
-        Domain_DY = float(nc_ds.getncattr('YCELL'))
-        Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
-        Domain_NROWS = int(nc_ds.getncattr('NROWS'))
+        if self.data_type == 'WRF':
+            nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[source_index] + '/wrfout_d01_' + (self.date_start + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00'))
+            Domain_NCOLS = int(nc_ds.getncattr('WEST-EAST_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['west_east']) also works
+            Domain_NROWS = int(nc_ds.getncattr('SOUTH-NORTH_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['south_north']) also works
+            Domain_CEN_LAT = float(nc_ds.getncattr('CEN_LAT'))
+            Domain_CEN_LON = float(nc_ds.getncattr('CEN_LON'))
+            Domain_TRUELAT1 = float(nc_ds.getncattr('TRUELAT1'))
+            Domain_TRUELAT2 = float(nc_ds.getncattr('TRUELAT2'))
+            Domain_XORIG = float(wrf.cartopy_xlim(wrfin=nc_ds)[0])
+            Domain_YORIG = float(wrf.cartopy_ylim(wrfin=nc_ds)[0])
+            Domain_DX = float(nc_ds.getncattr('DX'))
+            Domain_DY = float(nc_ds.getncattr('DY'))
+        if self.data_type == 'CMAQ_regularsites' or self.data_type == 'CMAQ_supersites':         
+            init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
+            if not os.path.exists(init_file):
+                init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
+            if not os.path.exists(init_file):
+                print('the error of data sources!!')
+                sys.exit()
+            else:
+                nc_ds = netCDF4.Dataset(init_file)
+            Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
+            Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
+            Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
+            Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
+            Domain_XORIG = float(nc_ds.getncattr('XORIG'))
+            Domain_YORIG = float(nc_ds.getncattr('YORIG'))
+            Domain_DX = float(nc_ds.getncattr('XCELL'))
+            Domain_DY = float(nc_ds.getncattr('YCELL'))
+            Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
+            Domain_NROWS = int(nc_ds.getncattr('NROWS'))
         lcc_proj = ccrs.LambertConformal(central_longitude=Domain_CEN_LON, central_latitude=Domain_CEN_LAT,\
-                    standard_parallels=(Domain_TRUELAT1,Domain_TRUELAT2))
+                            standard_parallels=(Domain_TRUELAT1,Domain_TRUELAT2))
         lcc_extent = [Domain_XORIG, Domain_XORIG + Domain_DX*Domain_NCOLS,\
-                            Domain_YORIG, Domain_YORIG + Domain_DY*Domain_NROWS]
-
-        # Transform the target LCC to Web Mercator EPSG:3857 
-        LccXList = numpy.tile(numpy.arange(Domain_XORIG + Domain_DX / 2, Domain_XORIG \
-            + Domain_NCOLS * Domain_DX,Domain_DX), Domain_NCOLS) # Inner lOOP X FIRST, THEN OUTER LOOP Y
-        LccYList = numpy.repeat(numpy.arange(Domain_YORIG + Domain_DY/2, Domain_YORIG \
-            + Domain_NROWS * Domain_DY,Domain_DY), Domain_NROWS, axis=None) # Inner lOOP X FIRST, THEN OUTER LOOP Y 
-        combine_list =  [list(t) for t in zip(LccXList,LccYList)]
-        combine_list = [tuple(combine_list[n]) for n in  range(len(combine_list))]        
-        web_Mercator_List = pyproj.itransform(lcc_proj, "epsg:3857", combine_list)
-        web_Mercator_List = [list(pt) for pt in web_Mercator_List]
-        x_min = min(web_Mercator_List,key=itemgetter(0))[0]
-        y_min = min(web_Mercator_List,key=itemgetter(1))[1]
-        x_max = max(web_Mercator_List,key=itemgetter(0))[0]
-        y_max = max(web_Mercator_List,key=itemgetter(1))[1]
-        mercator_extent = [x_min,x_max,y_min,y_max]
-
+                                    Domain_YORIG, Domain_YORIG + Domain_DY*Domain_NROWS]
+        # Create grid points
+        LccX, LccY = numpy.meshgrid(numpy.arange(Domain_XORIG + Domain_DX / 2, Domain_XORIG + Domain_NCOLS * Domain_DX, Domain_DX),
+                                numpy.arange(Domain_YORIG + Domain_DY/2, Domain_YORIG + Domain_NROWS * Domain_DY, Domain_DY))
+        combine_list = numpy.vstack([LccX.flatten(), LccY.flatten()]).T
+        # Transform points to Web Mercator
+        # Pre-calculate projection transformation function
+        transform_func = pyproj.Transformer.from_crs(lcc_proj, "epsg:3857").transform
+        web_Mercator_List = numpy.array([list(transform_func(x, y)) for x, y in combine_list])
+        x_min = numpy.min(web_Mercator_List[:, 0])
+        y_min = numpy.min(web_Mercator_List[:, 1])
+        x_max = numpy.max(web_Mercator_List[:, 0])
+        y_max = numpy.max(web_Mercator_List[:, 1])
+        mercator_extent = [x_min, x_max, y_min, y_max]
         for hour_index in range(24):
             fig = plt.figure()
             ax = fig.add_subplot(1, 1, 1, frameon=False, projection=ccrs.epsg(3857))
@@ -1965,9 +1731,12 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         python_job.write("    make_mp4 = '/dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/ffmpeg -y -r 2 -f image2 -i ' + objProcess.output_dir + '/' + key_str + '_%4d.png -pix_fmt yuv420p  -c:v libx264 -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" '+ objProcess.output_dir + '/MP4' + '/' + key_str + '.mp4'\n")
         python_job.write("    os.system(make_mp4)\n")
         python_job.write("comm.Barrier()\n")
-        python_job.write("for file_path in glob.glob(os.path.join(objProcess.output_dir, 'png')):\n")
-        python_job.write("    os.remove(file_path)\n")
-        python_job.write("if rank == 0: print('well done!')\n")
+        python_job.write("if rank == 0:\n")
+        python_job.write("    for file in os.listdir(objProcess.output_dir):\n")
+        python_job.write("        file_str = os.path.join(objProcess.output_dir, file)\n")
+        python_job.write("        if  os.path.isfile(file_str) and file_str.endswith('.png'):\n")
+        python_job.write("            os.remove(file_str)\n")
+        python_job.write("    print('well done!')\n")
         python_job.close()
         os.chmod(python_file, stat.S_IRWXO+stat.S_IRWXG+stat.S_IRWXU)
         slurm_file = self.output_dir + '/' + job_tag + '.slurm'
@@ -1987,8 +1756,8 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         slurm_job.close()
         os.system('sbatch ' + slurm_file)       
 
-    def submit_official_air(self,num_nodes): # 提取国控站或气象站所有数据并进行画图
-        job_tag = 'official_air'
+    def submit_sites(self,num_nodes): # 提取站点数据并进行散点图及时序图绘制
+        job_tag = self.data_type
         python_file = self.output_dir + '/' + job_tag + '.py'
         python_job = open(python_file, 'w')
         python_job.write("import os\n")
@@ -2000,8 +1769,10 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         python_job.write("import sys\n") 
         python_job.write('sys.path.append("/dssg/home/acct-esehazenet/share/public_code/Class_files@Hazenet")\n')
         python_job.write("import post_process_test\n")
-        python_job.write("airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/shanghai_data')\n")
-        python_job.write("airdb_engine2 = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/AIR_China')\n")
+        if (self.data_type == 'WRF') or (self.data_type == 'CMAQ_regularsites'):
+            python_job.write("airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/shanghai_data')\n")
+        if (self.data_type == 'CMAQ_supersites'):
+            python_job.write("airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/AIR_China')\n")
         python_job.write("comm = MPI.COMM_WORLD\n")
         python_job.write("rank = comm.Get_rank()\n")
         python_job.write("size = comm.Get_size()\n")
@@ -2011,14 +1782,48 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
             + "','" + str(self.source_dirs) + "'," + str(self.extracted_layers)+ "," + str(self.sites_includedprovinces)+ "," + str(self.sites_includedcities) + ")\n")
         python_job.write("    objProcess.output_dir = '" + str(self.output_dir) + "'\n")
         python_job.write("    list_obs = []\n")
-        python_job.write("    objProcess.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',\
-        'SO2|μg/m3|0~60|sulfur dioxide','PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter']\n")             
         python_job.write("    for factor_index in range(len(objProcess.factors)):\n")
         python_job.write("        factor_name = objProcess.factors[factor_index].split('|')[0]\n")   
-        python_job.write("        ds_sql = \"SELECT \" + factor_name.lower() + \",station_code,pubtime FROM t_na_station_realtime \" \
+        if self.data_type == 'WRF':
+            python_job.write("        factor_axis = factor_name\n")
+            python_job.write("        if factor_name.upper()=='PBLH':\n")
+            python_job.write("            list_obs.append(pandas.DataFrame())\n")
+            python_job.write("            continue\n")
+            python_job.write("        if factor_name.upper()=='TC':\n")
+            python_job.write("            factor_axis = 'TEM'\n")
+            python_job.write("        if factor_name.upper()=='RH':\n")
+            python_job.write("            factor_axis = 'RHU'\n")
+            python_job.write("        if factor_name=='Pressure':\n")
+            python_job.write("            factor_axis = 'PRS'\n")
+            python_job.write("        if factor_name.upper()=='WS':\n")
+            python_job.write("            factor_axis = 'CASE WHEN WIN_S_Avg_10mi IS NULL THEN WIN_S_Avg_2mi ELSE WIN_S_Avg_10mi END AS wind_s'\n")
+            python_job.write("        if factor_name.upper()=='WD':\n")
+            python_job.write("            factor_axis = 'CASE WHEN WIN_D_Avg_10mi IS NULL THEN WIN_D_Avg_2mi ELSE WIN_D_Avg_10mi END AS wind_D'\n")
+            python_job.write("        ds_sql = \"SELECT \" + factor_axis + \", station_code,TimePoint \"\
+            + \"FROM t_weather_data WHERE station_code IN ('\" + \"','\".join(objProcess.siteIDs) \
+            + \"') AND TimePoint BETWEEN '\" + (objProcess.date_start + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' AND '\" \
+            + (objProcess.date_end + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' ORDER BY TimePoint\"\n")
+        if self.data_type == 'CMAQ_regularsites':
+            python_job.write("        ds_sql = \"SELECT \" + factor_name.lower() + \",station_code,pubtime FROM t_na_station_realtime \" \
             + \"WHERE station_code IN ('\" + \"','\".join(objProcess.siteIDs) + \"') AND pubtime BETWEEN '\" \
             + (objProcess.date_start + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' AND '\" + (objProcess.date_end + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") \
             + \"' ORDER BY pubtime\"\n")
+        if self.data_type == 'CMAQ_supersites':
+            python_job.write("        factor_axis = factor_name + '_ug_m3'\n")
+            python_job.write("        if 'PM25_' in factor_name.upper():\n")
+            python_job.write("            factor_axis = factor_name.replace('PM25_','') + '_ug_m3'\n")            
+            python_job.write("        if factor_name.upper()=='CO':\n")
+            python_job.write("            factor_axis = 'CO_mg_m3'\n")
+            python_job.write("        if factor_name.upper()=='TS':\n")
+            python_job.write("            factor_axis = '(SO2_ug_m3*1/2+SO4_ug_m3*1/3) AS TS'\n")
+            python_job.write("        if factor_name.upper()=='TNN':\n")
+            python_job.write("            factor_axis = '(NO_ug_m3*14/(14+16)+NO2_ug_m3*14/(14+32)+HNO3_ug_m3*14/(14+1+48)+NO3_ug_m3*14/(14+48)) AS TNN'\n")
+            python_job.write("        if factor_name.upper()=='TAN':\n")
+            python_job.write("            factor_axis = '(NH3_ug_m3*14/17+NH4_ug_m3*14/18) AS TAN'\n")
+            python_job.write("        ds_sql = \"SELECT \" + factor_axis + \", station_code,obs_time FROM Supersite_PM_GAS \" \
+                + \"WHERE station_code IN ('\" + \"','\".join(objProcess.siteIDs) + \"') AND obs_time BETWEEN '\" \
+                + (objProcess.date_start + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' AND '\" + (objProcess.date_end + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") \
+                + \"' ORDER BY station_code, obs_time\"\n")
         python_job.write("        df_obs = pandas.DataFrame(numpy.array(pandas.read_sql_query(ds_sql, airdb_engine)))\n")
         python_job.write("        df_obs.columns=[factor_name,'SiteCode','TimePoint']\n")
         python_job.write("        df_obs.drop_duplicates(subset=['SiteCode','TimePoint'],keep='first',inplace=True)\n")
@@ -2043,17 +1848,18 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         python_job.write("    factor_index = (global_index // (len(objProcess.source_dirs.split(';')))) % len(objProcess.factors)\n")
         python_job.write("    day_index = (global_index // (len(objProcess.source_dirs.split(';')) * len(objProcess.factors))) % ((objProcess.date_end - objProcess.date_start).days + 1)\n")
         python_job.write("    ds_target = objProcess.extract_2dsimu(source_index, 0, factor_index, day_index)\n")        
-        python_job.write("    df_simu_list = []\n")
+        python_job.write("    if 'df_simu_list' not in locals():\n")
+        python_job.write("        df_simu_list = []\n")
         python_job.write("    site_indices = numpy.arange(objProcess.siteIDs.shape[0])\n")
+        python_job.write("    factor_values = ds_target[:, objProcess.siterows[source_index][site_indices], objProcess.sitecols[source_index][site_indices]]\n")
         python_job.write("    for hour_index in range(24):\n")
-        python_job.write("        current_time = objProcess.date_start + datetime.timedelta(days=day_index, hours=hour_index)\n")
-        python_job.write("        factor_values = ds_target[hour_index, objProcess.sitecols[source_index][site_indices], objProcess.siterows[source_index][site_indices]]\n")
+        python_job.write("        current_time = objProcess.date_start + datetime.timedelta(days=day_index, hours=hour_index + 8)\n") # utc 00> +8
         python_job.write("        df_simu_single = pandas.DataFrame({\n")
         python_job.write("              'source_index': source_index,\n")
         python_job.write("              'SiteCode': objProcess.siteIDs[site_indices],\n")
         python_job.write("              'TimePoint': current_time,\n")
         python_job.write("              'factor_index':factor_index,\n")
-        python_job.write("              'factor_value': factor_values\n")
+        python_job.write("              'factor_value': factor_values[hour_index]\n")
         python_job.write("              })\n")
         python_job.write("        df_simu_list.append(df_simu_single)\n")
         python_job.write("    df_simu_sites = pandas.concat(df_simu_list, ignore_index=True)\n")
@@ -2069,7 +1875,8 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         python_job.write("for global_index in range(start_index, end_index):\n")
         python_job.write("    factor_index = global_index  % len(objProcess.factors)\n")
         python_job.write("    source_index = (global_index // (len(objProcess.factors))) % len(objProcess.source_dirs.split(';'))\n")
-        python_job.write("    objProcess.Scatter(factor_index,source_index,list_obs[factor_index],df_simu_sites)\n")
+        python_job.write("    if not list_obs[factor_index].empty:\n")
+        python_job.write("        objProcess.Scatter(factor_index,source_index,list_obs[factor_index],df_simu_sites)\n")
         # 开始时序图
         python_job.write("comm.Barrier()\n")
         python_job.write("total_iterations = len(objProcess.factors) * objProcess.siteIDs.shape[0]\n")
@@ -2080,7 +1887,8 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         python_job.write("for global_index in range(start_index, end_index):\n")
         python_job.write("    factor_index = global_index  % (len(objProcess.factors))\n")
         python_job.write("    site_index = (global_index // (len(objProcess.factors))) % (objProcess.siteIDs.shape[0])\n")
-        python_job.write("    objProcess.Timeseries(factor_index,site_index,list_obs[factor_index],df_simu_sites)\n")
+        python_job.write("    if not list_obs[factor_index].empty:\n")
+        python_job.write("        objProcess.Timeseries(factor_index,site_index,list_obs[factor_index],df_simu_sites)\n")
         python_job.write("comm.Barrier()\n")
         python_job.write("if rank == 0:  print('well done!')\n")
         python_job.write("MPI.Finalize()\n")
@@ -2113,25 +1921,20 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
         if os.path.exists(self.output_dir):
             shutil.rmtree(self.output_dir, ignore_errors=True)
         os.makedirs(self.output_dir)
-        if not os.path.exists(self.output_dir + '/MP4'):
-            os.makedirs(self.output_dir + '/MP4')
-        if not os.path.exists(self.output_dir + '/PNG'):
-            os.makedirs(self.output_dir + '/PNG')
-        if self.data_type.upper() == 'WRF': 
-            os.makedirs(self.output_dir + '/Scatter/official_met')
-            os.makedirs(self.output_dir + '/Timeseries/official_met')
-            os.makedirs(self.output_dir + '/csv/official_met')            
-            #self.submit_official_met() # 提取气象观测网数据并作对比图
-        if self.data_type.upper() =='CMAQ_BAU':
-            os.makedirs(self.output_dir + '/Scatter/official_air')
-            os.makedirs(self.output_dir + '/Timeseries/official_air')
-            os.makedirs(self.output_dir + '/csv/official_air')  
-            self.submit_official_air(5) # 提取大气国控点数据并作对比图
+        os.makedirs(self.output_dir + '/MP4')
+        os.makedirs(self.output_dir + '/PNG')
+        os.makedirs(self.output_dir + '/Scatter')
+        os.makedirs(self.output_dir + '/CSV')
+        os.makedirs(self.output_dir + '/Timeseries')
+        for source_index in range(len(self.source_dirs.split(';'))):
+            for factor_index in range(len(self.factors)):
+                for layer_index in range(len(self.extracted_layers)):                
+                    savedir = self.output_dir + '/PNG/online_' + self.source_dirs.split(';')[int(source_index)].split('/')[-1] \
+                        + '_' + self.factors[factor_index].split('|')[0] + '_Layer' + str(self.extracted_layers[layer_index])
+                    os.makedirs(savedir)
 
-            os.makedirs(self.output_dir + '/Scatter/supersite_air')
-            os.makedirs(self.output_dir + '/Timeseries/supersite_air')
-            os.makedirs(self.output_dir + '/csv/supersite_air') 
-            #self.submit_supersite() # 提取大气环境超级站数据并作对比图
+        self.submit_spatial(5)  # 提交画图任务
+        self.submit_sites(5)  # 提交站点图任务
 
         if self.data_type.lower() == 'adjoint_sensitivity':
             os.makedirs(self.output_dir + '/hourly')
@@ -2143,15 +1946,6 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
             os.makedirs(self.output_dir + '/daily')
             os.makedirs(self.output_dir + '/period')
 
-        for source_index in range(len(self.source_dirs.split(';'))):
-            for factor_index in range(len(self.factors)):
-                for layer_index in range(len(self.extracted_layers)):                
-                    savedir = self.output_dir + '/PNG/online_' + self.source_dirs.split(';')[int(source_index)].split('/')[-1] \
-                        + '_' + self.factors[factor_index].split('|')[0] + '_Layer' + str(self.extracted_layers[layer_index])
-                    os.makedirs(savedir)
-
-        self.submit_spatial(5)  # 提交画图任务
-        
         for source_index in range(len(self.source_dirs.split(';'))): # 针对每个数据源进行处理
             if self.data_type.lower() == 'adjoint_sensitivity':
                 self.makefiles_sensitivity_hourly(self.source_dirs.split(';')[int(source_index)])
@@ -2169,8 +1963,4 @@ lat_0=objProcess.Domain_CEN_LAT, lon_0=objProcess.Domain_CEN_LON, a=6370000, b=6
             for file in glob.glob(self.output_dir + '/*.log'):
                 if (not 'well done' in open(file, 'r').read()): finish_flag = False
             time.sleep(10)
-        for file in os.listdir(self.output_dir):
-            file_str = os.path.join(self.output_dir, file)
-            if  os.path.isfile(file_str):
-                os.remove(file_str)
         print('The post processing ended successfully at ' + datetime.datetime.now().strftime('%m-%d %H:%M'))
