@@ -13,11 +13,16 @@ The data directory stores the background and font files needed to run the progra
 + Pandas  
 + Numpy
 + Matplotlib
-/environment/requirements.txt may be used to create a conda environment.
 
 ## Usage
-Edit path in 模拟结果后处理作图示例文件test.slurm and run:  
+/PostAtmos/environment/env_air.yml may be used to create a conda environment.
 
-$ sbatch /dssg/home/acct-esehazenet/hazenet-pg5/PostAtmos/模拟结果后处理作图示例文件test.slurm  
+$ conda env create --file env_air.yml --name target_env
+
+Edit path in /PostAtmos/post_process_samples.slurm and run:  
+
+$ sbatch /PostAtmos/post_process_samples.slurm
+
+or run /PostAtmos/post_process_samples.ipynb in Jupyter Notebook.
 
 platform: linux-64
