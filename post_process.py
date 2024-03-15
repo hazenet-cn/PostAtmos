@@ -35,24 +35,27 @@ import wrf
 import xarray
 
 simplefilter(action='ignore', category=FutureWarning)
-heiti_font = matplotlib.font_manager.FontProperties\
-    (fname="/dssg/home/acct-esehazenet/share/public_dataset/raw/simhei.ttf", size=25)
+
 def calc_kernel(samp):
     return stats.gaussian_kde(samp)(samp)
-airdb_engine = sqlalchemy.create_engine("mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/shanghai_data")
-airdb_engine2 = sqlalchemy.create_engine("mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/AIR_China")
-    
+#airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station set1
+airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/shanghai_data')
+#airdb_engine2 = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database") #observation station set2
+airdb_engine2 = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/AIR_China')
+
 class Post_Process():
-    def __init__(self,data_type,date_start,date_end,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities):
+    def __init__(self,data_type,date_start,date_end,root_dir,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities):
         self.data_type = data_type
         self.date_start = datetime.datetime.strptime(date_start, "%Y-%m-%d")
         self.date_end = datetime.datetime.strptime(date_end, "%Y-%m-%d") + datetime.timedelta(hours=23)
         self.date_cover = pandas.date_range(self.date_start + datetime.timedelta(hours=8), self.date_end + datetime.timedelta(hours=8), freq='H')
+        self.root_dir = root_dir
         self.source_dirs = source_dirs
         self.extracted_layers = extracted_layers
         self.sites_includedprovinces = sites_includedprovinces
         self.sites_includedcities = sites_includedcities
-        
+        self.heiti_font = matplotlib.font_manager.FontProperties\
+            (fname=root_dir + "/data/simhei.ttf", size=25)
         if self.data_type == 'WRF':
             self.factors = ['TC|°(C)|-10~40|ambient temperature','WS|m/s|0~10|ambient wind speed',\
         'WD|degree|0~360|ambient wind direction','Pressure|hPa|900~1020|ambient pressure',\
@@ -106,8 +109,9 @@ class Post_Process():
                 self.siterows[source_index] = self.siterows[source_index][selected_indices]
              
         if self.data_type == 'CMAQ_regularsites':  # 针对全国空气质量国控点
-            self.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',
-        'SO2|μg/m3|0~60|sulfur dioxide','PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter']
+        #     self.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',
+        # 'SO2|μg/m3|0~60|sulfur dioxide','PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter']
+            self.factors = ['NO2|μg/m3|0~60|nitrogen dioxide']
             #提取观测站点信息
             if self.sites_includedprovinces != ['all']:
                 where_str = 'station_code is not null and station_province in ' \
@@ -247,7 +251,7 @@ class Post_Process():
             # self.savepath_MP4 = self.output_dir + '/MP4'  # 图片输出文件夹
             # self.single_PNG = self.output_dir + '/MP4_PNG'
             #仅用于保持一致性
-            nc_ds = netCDF4.Dataset('/dssg/home/acct-esehazenet/share/public_dataset/model_output/Adjoint_Forward/Forward_China_12km_2019-01-31_2019-01-31_BAU/ACONC_2019-01-31.nc')
+            nc_ds = netCDF4.Dataset(self.source_dirs[1]+'/ACONC_2019-01-31.nc')
             self.Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
             self.Domain_NROWS = int(nc_ds.getncattr('NROWS'))
             self.Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
@@ -315,9 +319,9 @@ class Post_Process():
 
         matplotlib.rcParams['agg.path.chunksize'] = 10000
         self.simhei_font = matplotlib.font_manager.FontProperties\
-            (fname="/dssg/home/acct-esehazenet/share/public_dataset/raw/simhei.ttf")
+            (fname=self.root_dir + "/data/simhei.ttf")
         self.timesnr_font = matplotlib.font_manager.FontProperties\
-            (fname="/dssg/home/acct-esehazenet/share/public_dataset/raw/TimesNewRoman.ttf")
+            (fname=self.root_dir + "/data/TimesNewRoman.ttf")
 
     def makefiles_semi_normalized_sensitivity_hourly(self, bwdDir):
         with open(f'{bwdDir}/BWD.slurm') as f:
@@ -678,7 +682,7 @@ class Post_Process():
         ax.set_extent(self.domain.LCC_plotextent, crs=self.domain.LCCProj_crs)   
         # ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())     
         # 读取并处理地图数据
-        dem_file = "/dssg/home/acct-esehazenet/share/public_dataset/raw/static_gis_datasets/ETOPO2v2g_f4.nc"
+        dem_file = self.root_dir + "/data/ETOPO2v2g_f4.nc"
         f = xarray.open_dataset(dem_file)
         lon = f['x'].sel(x=slice(50, 155)).values
         lat = f['y'].sel(y=slice(0, 70)).values
@@ -700,7 +704,7 @@ class Post_Process():
 
         ax.contourf(xx, yy, dem, levels=dem_levels, colors=dem_color, extend='both')
         # plot city's mark
-        df = pandas.read_csv("/dssg/home/acct-esehazenet/share/public_dataset/raw/static_gis_datasets/asia_city.csv")
+        df = pandas.read_csv(self.root_dir + "/data/asia_city.csv")
         df_admin = df[df['capital'] == 'admin']
         lon_admin = df_admin['lng'].to_list()
         lat_admin = df_admin['lat'].to_list()
@@ -821,7 +825,7 @@ class Post_Process():
             python_job.write("import matplotlib.pyplot as plt\n")
             python_job.write("import sys\n")
             python_job.write("import numpy\n")
-            python_job.write('sys.path.append("/dssg/home/acct-esehazenet/share/public_code/Class_files@Hazenet")\n')
+            python_job.write('sys.path.append("'+ self.root_dir + '")\n')
             python_job.write("import post_process\n")
             python_job.write("import cv2\n")
             python_job.write("import multiprocessing\n")
@@ -830,7 +834,7 @@ class Post_Process():
             # python_job.write("obj_TROPOMI = post_process.Post_Process()\n")
             python_job.write("obj_TROPOMI = post_process.Post_Process('" + self.data_type \
                 + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') \
-                + "','" + str(self.source_dirs) + "')\n")
+                 + "','" + str(self.root_dir) + "','" + str(self.source_dirs) + "')\n")
             python_job.write("obj_TROPOMI.output_dir = '" + str(self.output_dir) + "'\n")
             python_job.write("print(obj_TROPOMI, obj_TROPOMI.factors, ' begin')\n")
             python_job.write("def call_draw_PNG(day_index,factor_index):\n")
@@ -894,7 +898,7 @@ class Post_Process():
             slurm_file.write("#SBATCH --error=" + self.output_dir + "/%j.err\n")
             slurm_file.write("#SBATCH -N 1\n")
             slurm_file.write("#SBATCH --ntasks-per-node=" + str(self.mpijob_npn) + "\n")
-            slurm_file.write('/dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/python' + ' ' + python_file + ' >& ' + python_file + '.log')
+            slurm_file.write('python' + ' ' + python_file + ' >& ' + python_file + '.log')
             slurm_file.close()
             os.system('sbatch ' + slurm_fname)          
             
@@ -942,7 +946,7 @@ class Post_Process():
         fig, ax = plt.subplots(figsize=(16,10))
         pandas.plotting.register_matplotlib_converters() 
         ax.set_title(factor_name + ',' + str_site +'(' + str_province + ','+ str_city + ',' + str(site_lon) \
-            + 'E, ' + str(site_lat) + 'N)', fontsize=23, pad=(len(self.source_dirs.split(';'))+1)*35,fontproperties=heiti_font)        
+            + 'E, ' + str(site_lat) + 'N)', fontsize=23, pad=(len(self.source_dirs.split(';'))+1)*35,fontproperties=self.heiti_font)        
         color_list = ['red','blue','green','black']
         linestyle = ['-',':','--','-.']        
         df_simu_sites = df_simu_sites[(df_simu_sites['factor_index'].astype(str) == str(factor_index)) & (df_simu_sites['SiteCode'].astype(str) == str(self.siteIDs[site_index]))]
@@ -1448,7 +1452,7 @@ class Post_Process():
         factor_desc = self.factors[factor_index].split('|')[3]
         layer = self.extracted_layers[layer_index]
         current_day  = self.date_start + datetime.timedelta(days=day_index)
-        f = xarray.open_dataset("/dssg/home/acct-esehazenet/share/public_dataset/raw/static_gis_datasets/ETOPO2v2g_f4.nc")
+        f = xarray.open_dataset(self.root_dir + "/data/ETOPO2v2g_f4.nc")
         lon = f['x'].sel(x=slice(50, 155)).values
         lat = f['y'].sel(y=slice(0, 70)).values
         self.dem = f['z'].sel(x=slice(50, 155),y=slice(0, 70)).values
@@ -1457,7 +1461,7 @@ class Post_Process():
         self.dem_color = ['#084594', '#2171b5', '#4292c6', '#6baed6', '#9ecae1', '#c6dbef', '#deebf7', '#006837', '#31a354', '#78c679', '#addd8e', \
                 '#d9f0a3', '#f7fcb9', '#c9bc87', '#a69165', '#856b49', '#664830', '#ad9591', '#d7ccca']
         # plot city's mark
-        df = pandas.read_csv("/dssg/home/acct-esehazenet/share/public_dataset/raw/static_gis_datasets/asia_city.csv")
+        df = pandas.read_csv(self.root_dir + "/data/asia_city.csv")
         df_admin = df[df['capital'] == 'admin']
         self.lon_admin = df_admin['lng'].to_list()
         self.lat_admin = df_admin['lat'].to_list()
@@ -1690,14 +1694,14 @@ class Post_Process():
         python_job.write("from mpi4py import MPI\n")
         python_job.write("import glob\n")
         python_job.write("import sys\n") 
-        python_job.write('sys.path.append("/dssg/home/acct-esehazenet/share/public_code/Class_files@Hazenet")\n')
-        python_job.write("import post_process_test\n")
+        python_job.write('sys.path.append("'+ self.root_dir + '")\n')
+        python_job.write("import post_process\n")
         python_job.write("comm = MPI.COMM_WORLD\n")
         python_job.write("rank = comm.Get_rank()\n")
         python_job.write("size = comm.Get_size()\n")
         python_job.write("if rank == 0:\n") 
-        python_job.write("    objProcess = post_process_test.Post_Process('" + self.data_type \
-            + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') \
+        python_job.write("    objProcess = post_process.Post_Process('" + self.data_type \
+            + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') + "','" + str(self.root_dir) \
             + "','" + str(self.source_dirs) + "'," + str(self.extracted_layers)+ "," + str(self.sites_includedprovinces)+ "," + str(self.sites_includedcities) + ")\n")
         python_job.write("    objProcess.factors = " + str(self.factors) + "\n")
         python_job.write("    objProcess.output_dir = '" + str(self.output_dir) + "'\n")
@@ -1728,7 +1732,7 @@ class Post_Process():
         python_job.write("    layer_index = (global_index // len(objProcess.source_dirs.split(';'))) % len(objProcess.extracted_layers)\n")
         python_job.write("    factor_index = (global_index // (len(objProcess.source_dirs.split(';')) * len(objProcess.extracted_layers))) % len(objProcess.factors)\n")
         python_job.write("    key_str = objProcess.factors[factor_index].split('|')[0]  + '_' + str(objProcess.source_dirs.split(';')[int(source_index)].split('/')[-1]) + '_Layer' + str(objProcess.extracted_layers[layer_index])\n")
-        python_job.write("    make_mp4 = '/dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/ffmpeg -y -r 2 -f image2 -i ' + objProcess.output_dir + '/' + key_str + '_%4d.png -pix_fmt yuv420p  -c:v libx264 -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" '+ objProcess.output_dir + '/MP4' + '/' + key_str + '.mp4'\n")
+        python_job.write("    make_mp4 = 'ffmpeg -y -r 2 -f image2 -i ' + objProcess.output_dir + '/' + key_str + '_%4d.png -pix_fmt yuv420p  -c:v libx264 -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" '+ objProcess.output_dir + '/MP4' + '/' + key_str + '.mp4'\n")
         python_job.write("    os.system(make_mp4)\n")
         python_job.write("comm.Barrier()\n")
         python_job.write("if rank == 0:\n")
@@ -1751,7 +1755,7 @@ class Post_Process():
         slurm_job.write("#SBATCH --error=" + self.output_dir + "/" + job_tag + ".log\n")
         slurm_job.write("#SBATCH -N " + str(num_nodes) + " \n")
         slurm_job.write("#SBATCH --exclusive\n")
-        slurm_job.write('mpirun -n '+ str(num_nodes*64) + ' /dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/python ' + self.output_dir + '/' + job_tag + '.py' \
+        slurm_job.write('mpirun -n '+ str(num_nodes*64) + ' python ' + self.output_dir + '/' + job_tag + '.py' \
             + ' >& ' + self.output_dir + '/' + job_tag + '.log\n')
         slurm_job.close()
         os.system('sbatch ' + slurm_file)       
@@ -1767,8 +1771,8 @@ class Post_Process():
         python_job.write("from mpi4py import MPI\n")
         python_job.write("import sqlalchemy\n")
         python_job.write("import sys\n") 
-        python_job.write('sys.path.append("/dssg/home/acct-esehazenet/share/public_code/Class_files@Hazenet")\n')
-        python_job.write("import post_process_test\n")
+        python_job.write('sys.path.append("'+ self.root_dir + '")\n')
+        python_job.write("import post_process\n")
         if (self.data_type == 'WRF') or (self.data_type == 'CMAQ_regularsites'):
             python_job.write("airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/shanghai_data')\n")
         if (self.data_type == 'CMAQ_supersites'):
@@ -1777,8 +1781,8 @@ class Post_Process():
         python_job.write("rank = comm.Get_rank()\n")
         python_job.write("size = comm.Get_size()\n")
         python_job.write("if rank == 0:\n")
-        python_job.write("    objProcess = post_process_test.Post_Process('" + self.data_type \
-            + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') \
+        python_job.write("    objProcess = post_process.Post_Process('" + self.data_type \
+            + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') + "','" + str(self.root_dir) \
             + "','" + str(self.source_dirs) + "'," + str(self.extracted_layers)+ "," + str(self.sites_includedprovinces)+ "," + str(self.sites_includedcities) + ")\n")
         python_job.write("    objProcess.output_dir = '" + str(self.output_dir) + "'\n")
         python_job.write("    list_obs = []\n")
@@ -1906,7 +1910,7 @@ class Post_Process():
         slurm_job.write("#SBATCH --error=" + self.output_dir + "/" + job_tag + ".log\n")
         slurm_job.write("#SBATCH -N " + str(num_nodes) + " \n")
         slurm_job.write("#SBATCH --exclusive\n")
-        slurm_job.write('mpirun -n '+ str(num_nodes*64) + ' /dssg/home/acct-esehazenet/share/.conda/envs/env_air/bin/python ' + self.output_dir + '/' + job_tag + '.py' \
+        slurm_job.write('mpirun -n '+ str(num_nodes*64) + ' python ' + self.output_dir + '/' + job_tag + '.py' \
             + ' >& ' + self.output_dir + '/' + job_tag + '.log\n')
         slurm_job.close()
         os.system('sbatch ' + slurm_file)        
@@ -1916,7 +1920,7 @@ class Post_Process():
             print('数据源有重复输入，请检查！')
             sys.exit ()
         print('Post processing start at: ' + datetime.datetime.now().strftime('%m-%d %H:%M'));
-        self.output_dir = str(pathlib.Path.home()) + '/PostProcess_' + self.data_type + '_' + self.date_start.strftime('%Y-%m-%d') \
+        self.output_dir = self.root_dir + '/PostProcess_' + self.data_type + '_' + self.date_start.strftime('%Y-%m-%d') \
             + '~' + self.date_end.strftime('%Y-%m-%d') # 后处理结果保存在家目录下
         if os.path.exists(self.output_dir):
             shutil.rmtree(self.output_dir, ignore_errors=True)
@@ -1933,8 +1937,8 @@ class Post_Process():
                         + '_' + self.factors[factor_index].split('|')[0] + '_Layer' + str(self.extracted_layers[layer_index])
                     os.makedirs(savedir)
 
-        self.submit_spatial(5)  # 提交画图任务
-        self.submit_sites(5)  # 提交站点图任务
+        self.submit_spatial(2)  # 提交画图任务
+        self.submit_sites(2)  # 提交站点图任务
 
         if self.data_type.lower() == 'adjoint_sensitivity':
             os.makedirs(self.output_dir + '/hourly')
