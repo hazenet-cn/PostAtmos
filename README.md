@@ -5,7 +5,9 @@ Post-processor PostAtmos from the paper “Rapid graphical verification of atmos
 <img src="https://github.com/hazenet-cn/PostAtmos/blob/main/imgs/post_process.png"  width = "70%" height = "70%"/>
 
 ## Data
-The data directory stores the background and font files needed to run the program. And the program currently can recognise CMAQ, WRF result output files.
+The data directory stores the simulation data(.nc), observation data(.csv), background and font files needed to run the program.   
+You need to import the csv data into your database and then modify the database connection in post_process.py  
+The program currently can recognise CMAQ, WRF result output files.
 
 ## Requirements
 + MPI

@@ -38,10 +38,9 @@ simplefilter(action='ignore', category=FutureWarning)
 
 def calc_kernel(samp):
     return stats.gaussian_kde(samp)(samp)
-#airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station set1
-airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/shanghai_data')
-#airdb_engine2 = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database") #observation station set2
-airdb_engine2 = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/AIR_China')
+airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station set1
+airdb_engine2 = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database") #observation station set2
+
 
 class Post_Process():
     def __init__(self,data_type,date_start,date_end,root_dir,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities):
@@ -1774,9 +1773,9 @@ class Post_Process():
         python_job.write('sys.path.append("'+ self.root_dir + '")\n')
         python_job.write("import post_process\n")
         if (self.data_type == 'WRF') or (self.data_type == 'CMAQ_regularsites'):
-            python_job.write("airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/shanghai_data')\n")
+            python_job.write("airdb_engine = sqlalchemy.create_engine('dialect+driver://username:password@host:port/database')\n")
         if (self.data_type == 'CMAQ_supersites'):
-            python_job.write("airdb_engine = sqlalchemy.create_engine('mysql+pymysql://airdb_query:2022*sjtu@111.186.59.34:3306/AIR_China')\n")
+            python_job.write("airdb_engine = sqlalchemy.create_engine('dialect+driver://username:password@host:port/database')\n")
         python_job.write("comm = MPI.COMM_WORLD\n")
         python_job.write("rank = comm.Get_rank()\n")
         python_job.write("size = comm.Get_size()\n")
