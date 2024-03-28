@@ -59,7 +59,7 @@ CREATE TABLE t_na_station_realtime (
 ```
 Import CSV files in MySQL Client: take Mysql workbench as an example:  
 
-Click the destination table
+Click the destination table  
 <img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img1.png"  width = "70%" height = "70%"/>
 
 Select the table path you want to import  
