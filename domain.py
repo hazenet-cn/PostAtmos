@@ -12,7 +12,7 @@ class domain_definition():
     def __init__(self,domain_name,ref_latitude,ref_longtitude,truelat_first,truelat_second,NCOLS,NROWS,X_CELL,Y_CELL,X_ORIG,Y_ORIG):
         self.projection = "lambert"
         self.domain_name= domain_name
-        # 获取重要输入参数
+        # Gain the input parameters
         self.ref_latitude = ref_latitude
         self.ref_longtitude = ref_longtitude
         # ref_latitude, ref_longtitude: A real value specifying the latitude and longitude part of a (latitude, longitude) location 
@@ -35,7 +35,7 @@ class domain_definition():
         self.X_ORIG = X_ORIG # X coordinate of the grid origin (lower left corner of the cell at column=row=1, meters)
         self.Y_ORIG = Y_ORIG # Y coordinate of the grid origin (lower left corner of the cell at column=row=1, meters)
 
-        # 根据参数定义投影信息
+        # Define projection information based on parameters
         self.LCCProj = pyproj.Proj(proj='lcc', lat_1=self.truelat_first, lat_2=self.truelat_second,\
              lat_0=self.ref_latitude, lon_0=self.ref_longtitude, a=6370000, b=6370000)
         self.LCCProj_crs = cartopy.crs.LambertConformal(central_longitude=self.ref_longtitude, \
@@ -43,7 +43,7 @@ class domain_definition():
         self.LCC_plotextent = [self.X_ORIG, self.X_ORIG + self.X_CELL * self.NCOLS, self.Y_ORIG,
                     self.Y_ORIG + self.Y_CELL * self.NROWS]
         
-        # 构建几个重要的坐标数组
+        # Construct a few important coordinate arrays
         # Transform the target LCC to WGS84 and Web Mercator EPSG:3857 
         self.LccXList = numpy.tile(numpy.arange(self.X_ORIG + self.X_CELL / 2, self.X_ORIG \
             + self.NCOLS * self.X_CELL,self.X_CELL), self.NROWS) # Inner lOOP X FIRST, THEN OUTER LOOP Y
@@ -68,86 +68,3 @@ class domain_definition():
         combine_list = [tuple(combine_list[n]) for n in  range(len(combine_list))]        
         self.web_Mercator_List = pyproj.itransform(pyproj.crs.CRS.from_proj4(self.LCCProj.to_proj4()), "epsg:3857", combine_list)
         self.web_Mercator_List = [list(pt) for pt in self.web_Mercator_List]
-
-    def extract_grids_of_region(self, region_type, region_name):
-        grids_list = [] #用于存储生成的各个网格
-        idd_num = 1
-        for col in range(self.NCOLS):
-            for row in range(self.NROWS):
-                geo_df = geopandas.GeoDataFrame(data=[[idd_num,row,col]],
-                    geometry=[Point(self.Grid_LonArray[row,col], self.Grid_LatArray[row,col])],
-                    columns=['ID','rownum', 'colnum'])
-                grids_list.append(geo_df)
-                idd_num = idd_num + 1     
-        gdf_grid = pd.concat(grids_list)
-        if region_type == 'province':
-            costcy_shp = '/dssg/home/acct-esehazenet/share/public_dataset/raw/static_gis_datasets/行政区划shp数据/2023年/2023年初省级矢量.shp'
-            gdf_costcy =  geopandas.read_file(costcy_shp) #使用geopandas读入模型网格和costcy shp文件 
-            name_field = '省'
-        if region_type == 'city':
-            costcy_shp = '/dssg/home/acct-esehazenet/share/public_dataset/raw/static_gis_datasets/行政区划shp数据/2023年/2023年初地级矢量.shp'
-            gdf_costcy =  geopandas.read_file(costcy_shp) #使用geopandas读入模型网格和costcy shp文件 
-            name_field = '地名'
-        if region_type == 'county':
-            costcy_shp = '/dssg/home/acct-esehazenet/share/public_dataset/raw/static_gis_datasets/行政区划shp数据/2023年/2023年初县矢量.shp'
-            gdf_costcy =  geopandas.read_file(costcy_shp) #使用geopandas读入模型网格和costcy shp文件 
-            name_field = '地名'
-        gdf_costcy = gdf_costcy[gdf_costcy[name_field]==region_name]
-        gdf_grid.crs = gdf_costcy.crs
-        gdf_grid_result = geopandas.sjoin(gdf_grid, gdf_costcy, how="inner", predicate='within') 
-        gdf_grid_result = gdf_grid_result.loc[:,['ID','rownum','colnum']]
-        return gdf_grid_result
-
-    def draw_outline(self, whichcolor):
-        outline = folium.FeatureGroup(name='区域轮廓', control=True, show = True)
-        icon1 = '{}(R{}*C{},{})' \
-                .format(self.domain_name,str(self.NROWS),str(self.NCOLS),str(self.X_CELL//1000)+'*'+str(self.Y_CELL//1000)+'km')
-        points = []
-        for i in range(self.NROWS + 1):       
-            points.append([self.Points_LatArray[i,0],self.Points_LonArray[i,0]])
-        for j in range(self.NCOLS + 1):        
-            points.append([self.Points_LatArray[self.NROWS,j],self.Points_LonArray[self.NROWS,j]])
-        for i in range(self.NROWS + 1):        
-            points.append([self.Points_LatArray[self.NROWS-i,self.NCOLS],self.Points_LonArray[self.NROWS-i,self.NCOLS]])
-        for j in range(self.NCOLS + 1):        
-            points.append([self.Points_LatArray[0,self.NCOLS-j],self.Points_LonArray[0,self.NCOLS-j]])
-        folium.PolyLine(
-            points,
-            weight=2,
-            color=whichcolor,
-            opacity=0.8
-            ).add_to(outline)    
-        folium.map.Marker(
-            [self.Points_LatArray[self.NROWS,self.NCOLS], self.Points_LonArray[self.NROWS,self.NCOLS] + 0.1],
-            icon=DivIcon(
-            icon_size=(350,350),
-            icon_anchor=(0,0),
-            html='<div style="font-family: Verdana;font-style: italic;font-size: 8pt;font-weight: bold;\
-                color: ' + whichcolor + ';white-space: pre-wrap;word-break: break-all;word-wrap: break-word">{}</div>'.format(icon1),
-            ) 
-            ).add_to(outline)        
-        return outline
-
-    def draw_grids(self, whichcolor):
-        grids = folium.FeatureGroup(name='区域网格线', control=True, show = True)
-        for i in range(1,self.NROWS):
-            row_points = []
-            for j in range(self.NCOLS + 1):
-                row_points.append([self.Points_LatArray[i,j],self.Points_LonArray[i,j]])
-            folium.PolyLine(
-                row_points,
-                weight=1,
-                color=whichcolor,
-                opacity=0.5
-                ).add_to(grids)
-        for j in range(1,self.NCOLS):
-            col_points = []
-            for i in range(self.NROWS + 1):
-                col_points.append([self.Points_LatArray[i,j],self.Points_LonArray[i,j]])
-            folium.PolyLine(
-                col_points,
-                weight=1,
-                color=whichcolor,
-                opacity=0.5
-                ).add_to(grids)
-        return grids

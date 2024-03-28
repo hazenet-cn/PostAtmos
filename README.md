@@ -41,7 +41,7 @@ CREATE DATABASE observation;
 USE observation;
 
 -- create table for observation
-CREATE TABLE Supersite_Sites (
+CREATE TABLE t_na_stations (
     station_code VARCHAR(255) PRIMARY KEY,
     station_name VARCHAR(255),
     station_province VARCHAR(255),
@@ -50,34 +50,39 @@ CREATE TABLE Supersite_Sites (
     station_lat FLOAT
 );  
 
-CREATE TABLE YourTableName (
+CREATE TABLE t_na_station_realtime (
     ID BIGINT(20) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     station_code VARCHAR(20),
-    SO2 DOUBLE,
     NO2 DOUBLE,
-    CO DOUBLE,
-    O3 DOUBLE,
-    PM10 DOUBLE,
-    PM25 DOUBLE,
-    pubtime TIMESTAMP,
-    ctime DATETIME
+    pubtime TIMESTAMP
 );  
-
--- import CSV files
--- 注意：这需要在MySQL客户端或命令行中执行，不是标准SQL语句
-LOAD DATA INFILE '/path/to/your/file.csv'
-INTO TABLE obs_PM25
-FIELDS TERMINATED BY ',' -- 或你的分隔符
-ENCLOSED BY '"' -- 如果字段被引号包围
-LINES TERMINATED BY '\n'
-IGNORE 1 ROWS; -- 如果CSV文件包含标题行
 ```
+Import CSV files in MySQL Client: take Mysql workbench as an example:  
+
+Click the destination table
+<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img1.png"  width = "70%" height = "70%"/>
+
+Select the table path you want to import  
+<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img2.png"  width = "70%" height = "70%"/>
+
+Select destination  
+<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img3.png"  width = "70%" height = "70%"/>
+
+Set import configuration  
+<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img4.png"  width = "70%" height = "70%"/>
+
+The obs_data.csv in the data/observation folder corresponds to the t_na_station_realtime table in the database and the obs_station.csv corresponds to the t_na_stations table in the database.
 
 ### Step 4. Download Gridded Global Relief Data
 click https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2/ETOPO2v2-2006/ETOPO2v2g/netCDF/ETOPO2v2g_f4_netCDF.zip
 and move the file "ETOPO2v2g_f4.nc" into resources directory.
 
-### Step 5. Job submission using Slurm
+### Step 5. Edit sql database information in post_process.py(row 41)
+```python
+airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station and data
+```
+
+### Step 6. Job submission using Slurm
 Edit the configurations in /PostAtmos/samples/post_process_samples.slurm that are labeled in the sample file and run:  
 ```shell
 $ sbatch /PostAtmos/samples/post_process_samples.slurm

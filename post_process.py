@@ -76,7 +76,7 @@ class Post_Process():
             self.siteprovince = ds_station['station_province'].to_numpy()
             self.sitecols = []
             self.siterows = []
-            # 筛选网格空间范围内的站点
+            # Filtering sites within the spatial extent of the grid
             for source_index in range(len(self.source_dirs.split(';'))):
                 nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[source_index] + '/wrfout_d01_' + (self.date_start + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00'))
                 Domain_NCOLS = int(nc_ds.getncattr('WEST-EAST_PATCH_END_UNSTAG')) # len(nc_ds.dimensions['west_east']) also works
@@ -105,11 +105,11 @@ class Post_Process():
                 self.sitecols[source_index] = self.sitecols[source_index][selected_indices]
                 self.siterows[source_index] = self.siterows[source_index][selected_indices]
              
-        if self.data_type == 'CMAQ_regularsites':  # 针对全国空气质量国控点
+        if self.data_type == 'CMAQ_regularsites':  # For National Air Quality State Control Points
         #     self.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',
         # 'SO2|μg/m3|0~60|sulfur dioxide','PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter']
             self.factors = ['NO2|μg/m3|0~60|nitrogen dioxide']
-            #提取观测站点信息
+            #Extracting station information
             if self.sites_includedprovinces != ['all']:
                 where_str = 'station_code is not null and station_province in ' \
                     + str(self.sites_includedprovinces).replace('[','(').replace(']',')')
@@ -128,7 +128,7 @@ class Post_Process():
             self.siteprovince = ds_station['station_province'].to_numpy()
             self.sitecols = []
             self.siterows = []
-            # 筛选网格空间范围内的站点
+            # Filtering sites within the spatial extent of the grid
             for source_index in range(len(self.source_dirs.split(';'))):
                 init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
                 if not os.path.exists(init_file):
@@ -177,7 +177,7 @@ class Post_Process():
         #'PM25_K|μg/m3|0~5|potassium ion in fine particles','PM25_Ca|μg/m3|0~5|calcium ion in fine particles',\
         #'PM25_POC|μg/m3|0~30|primary organic carbon in fine particles','PM25_POM|μg/m3|0~30|primary organic matter in fine particles',\
         #'PM25_SOC|μg/m3|0~30|secondary organic carbon in fine particles','PM25_SOM|μg/m3|0~30|secondary organic matter in fine particles'
-            #提取观测站点信息
+            #Extracting station information
             if self.sites_includedprovinces != ['all']:
                 where_str = 'station_code is not null and station_province in ' \
                     + str(self.sites_includedprovinces).replace('[','(').replace(']',')')
@@ -196,7 +196,7 @@ class Post_Process():
             self.siteprovince = ds_station['station_province'].to_numpy()
             self.sitecols = []
             self.siterows = []
-            # 筛选网格空间范围内的站点
+            # Filtering sites within the spatial extent of the grid
             for source_index in range(len(self.source_dirs.split(';'))):
                 init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
                 if not os.path.exists(init_file):
@@ -234,8 +234,8 @@ class Post_Process():
 
 
         if self.data_type == 'TROPOMI':
-            self.start_day = datetime.datetime.strptime(date_start, "%Y-%m-%d") #开始日期，日期选择
-            self.end_day = datetime.datetime.strptime(date_end, "%Y-%m-%d") #结束日期，日期选择
+            self.start_day = datetime.datetime.strptime(date_start, "%Y-%m-%d") #Start date, date selection
+            self.end_day = datetime.datetime.strptime(date_end, "%Y-%m-%d") #End date, date selection
             #self.factors = ['NO2|mol/m2|0~0.0192|nitrogen_dioxide_total_column|v221']
             self.factors = ['NO2|mol/m2|0~30|nitrogen_dioxide_total_column|v221']
             #'CO|mol/m2|0~0.07|carbonmonoxide_total_column', 'O3|mol/m2|0~0.3|ozone_total_column','CH4|mol/m2|0~100|methane_total_column']
@@ -245,10 +245,9 @@ class Post_Process():
             self.domain = domain.domain_definition('China_12km',35.0,105,25.0,45.0,512,512,12000,12000,-3072000.0,-3072000.0)
             #self.domain = domain.domain_definition("CHINA_12km","lambert",35.0,105,258,258,25.0,45.0,512,512,12000,12000,-3072000.0,-3072000.0,45,5000)
             self.source_path = self.source_dirs
-            # self.savepath_MP4 = self.output_dir + '/MP4'  # 图片输出文件夹
+            # self.savepath_MP4 = self.output_dir + '/MP4'  # Image output folder
             # self.single_PNG = self.output_dir + '/MP4_PNG'
-            #仅用于保持一致性
-            nc_ds = netCDF4.Dataset(self.source_dirs[1]+'/ACONC_2019-01-31.nc')
+            nc_ds = netCDF4.Dataset(self.source_dirs[1]+'/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc')
             self.Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
             self.Domain_NROWS = int(nc_ds.getncattr('NROWS'))
             self.Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
@@ -339,7 +338,7 @@ class Post_Process():
             conchr = lgrid.variables['PMFINE'][:][:][:][:]
             ltime, llay, lrow, lcol = conchr.shape
             ltime = 24
-            # 每层都需要则设置为7，所有高度层累加则设置为1
+            # Set to 7 if each layer is required, and 1 if all height layers are cumulative.
             llay = 1
             ldattim = 2            
             sensfile = netCDF4.Dataset(filename, mode='w', format='NETCDF3_64BIT')
@@ -375,7 +374,7 @@ class Post_Process():
                 emissionArr = emission.variables[var][:][:][:][:][x*24+1 : x*24+25,0:7,:,:]
                 lgridArr = lgrid.variables[var][:][:][:][:][1:25, 0:7,:,:]
                 val = numpy.multiply(emissionArr, lgridArr)
-                # 每层都需要保留则注释此行，所有层全部累加则保留此行
+                # Comment this line if each layer needs to be preserved, and keep this line if all layers are totaled.
                 val = numpy.sum(val, axis = 1, keepdims=True)
                 sens_species = sensfile.createVariable(var,'f4',('TSTEP','LAY','ROW','COL'))  
                 sens_species[:] = numpy.zeros([ltime,llay,lrow,lcol])
@@ -672,13 +671,13 @@ class Post_Process():
         print('factor name in mp4_png', factor_name)
         print('type of dataset:', type(dataset))
         print('type of dataset[2]:', type(dataset[2]))        
-        # 绘制图，设置投影
+        # Plotting the diagram and setting up the projection
         fig = plt.figure(figsize=(8, 6))
         ax = fig.add_subplot(1, 1, 1, projection=self.domain.LCCProj_crs)
-        # 设置显示范围
+        # Setting the display range
         ax.set_extent(self.domain.LCC_plotextent, crs=self.domain.LCCProj_crs)   
         # ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())     
-        # 读取并处理地图数据
+        # Read and process terrain data
         dem_file = self.root_dir + "/resources/ETOPO2v2g_f4.nc"
         f = xarray.open_dataset(dem_file)
         lon = f['x'].sel(x=slice(50, 155)).values
@@ -694,7 +693,7 @@ class Post_Process():
         dem_color = ['#084594', '#2171b5', '#4292c6', '#6baed6', '#9ecae1', '#c6dbef', '#deebf7', '#006837', '#31a354',
                      '#78c679', '#addd8e', \
                      '#d9f0a3', '#f7fcb9', '#c9bc87', '#a69165', '#856b49', '#664830', '#ad9591', '#d7ccca']
-        # 绘制地图
+        # plot figure
         # print('xx:', xx.shape)
         # print('yy:', yy.shape)
         # print('dem:', dem.shape)
@@ -707,7 +706,7 @@ class Post_Process():
         lat_admin = df_admin['lat'].to_list()
         name_admin = df_admin['city'].to_list()
         zip_object = zip(lon_admin, lat_admin, name_admin)
-        # zorder 控制绘制顺序，值越小越先绘制
+        # zorder Controls the drawing order, the smaller the value the more it is drawn first
         for (lg, lt, ne) in zip_object:
             ax.text(lg, lt, ne, color='dimgrey', va='center', ha='center', transform=ccrs.Geodetic(), zorder=4,
                     fontsize=8)
