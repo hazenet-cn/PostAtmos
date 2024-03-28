@@ -38,9 +38,7 @@ simplefilter(action='ignore', category=FutureWarning)
 
 def calc_kernel(samp):
     return stats.gaussian_kde(samp)(samp)
-airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station set1
-airdb_engine2 = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database") #observation station set2
-
+airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station and data
 
 class Post_Process():
     def __init__(self,data_type,date_start,date_end,root_dir,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities):
@@ -54,7 +52,7 @@ class Post_Process():
         self.sites_includedprovinces = sites_includedprovinces
         self.sites_includedcities = sites_includedcities
         self.heiti_font = matplotlib.font_manager.FontProperties\
-            (fname=root_dir + "/utils/simhei.ttf", size=25)
+            (fname=root_dir + "/resources/simhei.ttf", size=25)
         if self.data_type == 'WRF':
             self.factors = ['TC|°(C)|-10~40|ambient temperature','WS|m/s|0~10|ambient wind speed',\
         'WD|degree|0~360|ambient wind direction','Pressure|hPa|900~1020|ambient pressure',\
@@ -189,7 +187,7 @@ class Post_Process():
                 where_str = where_str + ' and station_city in ' \
                     + str(self.sites_includedcities).replace('[','(').replace(']',')')
             ds_station = pandas.read_sql_query('SELECT * FROM Supersite_Sites WHERE ' \
-                    + where_str + ' ORDER BY station_code', airdb_engine2)
+                    + where_str + ' ORDER BY station_code', airdb_engine)
             self.siteIDs = ds_station['station_code'].to_numpy().astype(str)
             self.sitenames = ds_station['station_name'].to_numpy()
             self.sitelats = ds_station['station_lat'].to_numpy()
@@ -318,9 +316,9 @@ class Post_Process():
 
         matplotlib.rcParams['agg.path.chunksize'] = 10000
         self.simhei_font = matplotlib.font_manager.FontProperties\
-            (fname=self.root_dir + "/utils/simhei.ttf")
+            (fname=self.root_dir + "/resources/simhei.ttf")
         self.timesnr_font = matplotlib.font_manager.FontProperties\
-            (fname=self.root_dir + "/utils/TimesNewRoman.ttf")
+            (fname=self.root_dir + "/resources/TimesNewRoman.ttf")
 
     def makefiles_semi_normalized_sensitivity_hourly(self, bwdDir):
         with open(f'{bwdDir}/BWD.slurm') as f:
@@ -681,7 +679,7 @@ class Post_Process():
         ax.set_extent(self.domain.LCC_plotextent, crs=self.domain.LCCProj_crs)   
         # ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())     
         # 读取并处理地图数据
-        dem_file = self.root_dir + "/data/ETOPO2v2g_f4.nc"
+        dem_file = self.root_dir + "/resources/ETOPO2v2g_f4.nc"
         f = xarray.open_dataset(dem_file)
         lon = f['x'].sel(x=slice(50, 155)).values
         lat = f['y'].sel(y=slice(0, 70)).values
@@ -703,7 +701,7 @@ class Post_Process():
 
         ax.contourf(xx, yy, dem, levels=dem_levels, colors=dem_color, extend='both')
         # plot city's mark
-        df = pandas.read_csv(self.root_dir + "/utils/asia_city.csv")
+        df = pandas.read_csv(self.root_dir + "/resources/asia_city.csv")
         df_admin = df[df['capital'] == 'admin']
         lon_admin = df_admin['lng'].to_list()
         lat_admin = df_admin['lat'].to_list()
@@ -1451,7 +1449,7 @@ class Post_Process():
         factor_desc = self.factors[factor_index].split('|')[3]
         layer = self.extracted_layers[layer_index]
         current_day  = self.date_start + datetime.timedelta(days=day_index)
-        f = xarray.open_dataset(self.root_dir + "/data/ETOPO2v2g_f4.nc")
+        f = xarray.open_dataset(self.root_dir + "/resources/ETOPO2v2g_f4.nc")
         lon = f['x'].sel(x=slice(50, 155)).values
         lat = f['y'].sel(y=slice(0, 70)).values
         self.dem = f['z'].sel(x=slice(50, 155),y=slice(0, 70)).values
@@ -1460,7 +1458,7 @@ class Post_Process():
         self.dem_color = ['#084594', '#2171b5', '#4292c6', '#6baed6', '#9ecae1', '#c6dbef', '#deebf7', '#006837', '#31a354', '#78c679', '#addd8e', \
                 '#d9f0a3', '#f7fcb9', '#c9bc87', '#a69165', '#856b49', '#664830', '#ad9591', '#d7ccca']
         # plot city's mark
-        df = pandas.read_csv(self.root_dir + "/utils/asia_city.csv")
+        df = pandas.read_csv(self.root_dir + "/resources/asia_city.csv")
         df_admin = df[df['capital'] == 'admin']
         self.lon_admin = df_admin['lng'].to_list()
         self.lat_admin = df_admin['lat'].to_list()

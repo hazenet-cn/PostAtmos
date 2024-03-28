@@ -6,12 +6,12 @@
 #SBATCH --mail-user=
 #SBATCH -n 1
 #SBATCH --ntasks-per-node=1
-#SBATCH --output=/Path/To/PostAtmos/samples/post_process.log  # Confirm the modification
-#SBATCH --error=/Path/To/PostAtmos/samples/post_process.log # Confirm the modification
-source /Path/To/.conda/envs/env_air/bin/activate # Confirm the modification
+#SBATCH --output=/Path/To/PostAtmos/samples/post_process.log  # This is your log path
+#SBATCH --error=/Path/To/PostAtmos/samples/post_process.log # This is your log path
+source /Path/To/.conda/envs/env_air/bin/activate # This is your python path
 python -c "
 import sys;
-root_dir = '/Path/To/PostAtmos'# Confirm the modification
+root_dir = '/Path/To/PostAtmos'# This is your PostAtmos path
 sys.path.append(root_dir);
 from post_process import Post_Process;
 extracted_layers = [1] # # Confirm the modification of altitude layers. The first layer is mandatory, with the format like [1,5,10]
