@@ -54,7 +54,7 @@ class Post_Process():
         self.sites_includedprovinces = sites_includedprovinces
         self.sites_includedcities = sites_includedcities
         self.heiti_font = matplotlib.font_manager.FontProperties\
-            (fname=root_dir + "/data/simhei.ttf", size=25)
+            (fname=root_dir + "/utils/simhei.ttf", size=25)
         if self.data_type == 'WRF':
             self.factors = ['TC|°(C)|-10~40|ambient temperature','WS|m/s|0~10|ambient wind speed',\
         'WD|degree|0~360|ambient wind direction','Pressure|hPa|900~1020|ambient pressure',\
@@ -318,9 +318,9 @@ class Post_Process():
 
         matplotlib.rcParams['agg.path.chunksize'] = 10000
         self.simhei_font = matplotlib.font_manager.FontProperties\
-            (fname=self.root_dir + "/data/simhei.ttf")
+            (fname=self.root_dir + "/utils/simhei.ttf")
         self.timesnr_font = matplotlib.font_manager.FontProperties\
-            (fname=self.root_dir + "/data/TimesNewRoman.ttf")
+            (fname=self.root_dir + "/utils/TimesNewRoman.ttf")
 
     def makefiles_semi_normalized_sensitivity_hourly(self, bwdDir):
         with open(f'{bwdDir}/BWD.slurm') as f:
@@ -703,7 +703,7 @@ class Post_Process():
 
         ax.contourf(xx, yy, dem, levels=dem_levels, colors=dem_color, extend='both')
         # plot city's mark
-        df = pandas.read_csv(self.root_dir + "/data/asia_city.csv")
+        df = pandas.read_csv(self.root_dir + "/utils/asia_city.csv")
         df_admin = df[df['capital'] == 'admin']
         lon_admin = df_admin['lng'].to_list()
         lat_admin = df_admin['lat'].to_list()
@@ -1460,7 +1460,7 @@ class Post_Process():
         self.dem_color = ['#084594', '#2171b5', '#4292c6', '#6baed6', '#9ecae1', '#c6dbef', '#deebf7', '#006837', '#31a354', '#78c679', '#addd8e', \
                 '#d9f0a3', '#f7fcb9', '#c9bc87', '#a69165', '#856b49', '#664830', '#ad9591', '#d7ccca']
         # plot city's mark
-        df = pandas.read_csv(self.root_dir + "/data/asia_city.csv")
+        df = pandas.read_csv(self.root_dir + "/utils/asia_city.csv")
         df_admin = df[df['capital'] == 'admin']
         self.lon_admin = df_admin['lng'].to_list()
         self.lat_admin = df_admin['lat'].to_list()

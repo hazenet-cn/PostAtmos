@@ -1,12 +1,14 @@
 # PostAtmos
 
-Post-processor PostAtmos from the paper “Rapid graphical verification of atmospheric modeling relies on high-performance computing” in Python is built for rapid, high-quality and flexible verification of atmospheric model simulation results using high-performance computing.
+Post-processor PostAtmos from the paper “Rapid graphical validation of atmospheric modeling relies on high-performance computing” is built in Python. By harnessing the parallel computational capabilities of high-performance computing platforms, it can successfully accelerate the validation process by approximately 165 times compared to traditional serial techniques.
 
-<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/imgs/post_process.png"  width = "70%" height = "70%"/>
+<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/post_process.png"  width = "70%" height = "70%"/>
 
-## Data
-The data directory stores the simulation data(.nc), observation data(.csv), background and font files needed to run the program.   
-You need to import the csv data into your database and then modify the database connection in post_process.py  
+The data directory stores a set of test data required to run the program,  
+including simulation data (.nc files) and observation data (.csv files).  
+
+
+ and then modify the database connection in post_process.py  
 The program currently can recognise CMAQ, WRF result output files.
 
 ## Requirements
@@ -17,9 +19,17 @@ The program currently can recognise CMAQ, WRF result output files.
 + Matplotlib
 
 ## Usage
+
+### Step 1. Create a conda environment
+/PostAtmos/config/env_air.yml may be used to create a conda environment.  
+```shell
+$ conda env create --file env_air.yml --name target_env
+```
+
+### Step 2. Import the csv data into your database
 /PostAtmos/environment/env_air.yml may be used to create a conda environment.
 
-$ conda env create --file env_air.yml --name target_env
+
 
 Edit path in /PostAtmos/post_process_samples.slurm and run:  
 
