@@ -11,9 +11,7 @@ The data directory stores a set of test data required to run the program,includi
 The samples directory stores the slurm sample files for running PostAtmos, as well as a display of some of the results of running PostAtmos.
 The resources dicrectory stores the background and font files needed in running.
 
-
- and then modify the database connection in post_process.py  
-The program currently can recognise CMAQ, WRF result output files.
+The program currently can recognise output files of CMAQ and WRF.
 
 ## Requirements
 + Linux based HPCs
