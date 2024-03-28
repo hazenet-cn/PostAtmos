@@ -8,7 +8,7 @@ Post-processor "PostAtmos" from the paper “Rapid graphical validation of atmos
 The config directory stores conda environment configuration file.  
 The data directory stores a set of test data required to run the program,including simulation data (.nc files) and observation data 
 (.csv files).  
-The samples directory stores the slurm sample files for running PostAtmos, as well as a display of some of the results of running PostAtmos.
+The samples directory stores the slurm sample files for running PostAtmos, as well as a display of some of the results of running PostAtmos.  
 The resources dicrectory stores the background and font files needed in running.
 
 The program currently can recognise output files of CMAQ and WRF.
