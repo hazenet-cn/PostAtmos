@@ -77,7 +77,8 @@ and move the file "ETOPO2v2g_f4.nc" into resources directory.
 
 ### Step 5. Edit sql database information in post_process.py(row 41)
 ```python
-airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station and data
+engine_str = "dialect+driver://username:password@host:port/database" #observation station and data
+airdb_engine = sqlalchemy.create_engine(engine_str)
 ```
 
 ### Step 6. Job submission using Slurm
