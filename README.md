@@ -98,3 +98,11 @@ and run:
 ```shell
 $ sbatch /PostAtmos/samples/post_process_samples.slurm
 ```
+
+if there is an error:  
+sbatch: error: Batch script contains DOS line breaks (\r\n)  
+sbatch: error: instead of expected UNIX line breaks (\n).  
+run:  
+```shell
+$ dos2unix /PostAtmos/samples/post_process_samples.slurm  
+```
