@@ -38,7 +38,8 @@ simplefilter(action='ignore', category=FutureWarning)
 
 def calc_kernel(samp):
     return stats.gaussian_kde(samp)(samp)
-airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host:port/database")  #observation station and data
+engine_str = "dialect+driver://username:password@host:port/database"
+airdb_engine = sqlalchemy.create_engine(engine_str)  #observation station and data
 
 class Post_Process():
     def __init__(self,data_type,date_start,date_end,root_dir,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities):
@@ -105,7 +106,7 @@ class Post_Process():
                 self.sitecols[source_index] = self.sitecols[source_index][selected_indices]
                 self.siterows[source_index] = self.siterows[source_index][selected_indices]
              
-        if self.data_type == 'CMAQ_regularsites':  # For National Air Quality State Control Points
+        if self.data_type == 'CMAQ':  # For National Air Quality State Control Points
         #     self.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',
         # 'SO2|μg/m3|0~60|sulfur dioxide','PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter']
             self.factors = ['NO2|μg/m3|0~60|nitrogen dioxide']
@@ -164,89 +165,17 @@ class Post_Process():
                 self.sitecols[source_index] = self.sitecols[source_index][selected_indices]
                 self.siterows[source_index] = self.siterows[source_index][selected_indices]
 
-        if self.data_type == 'CMAQ_supersites':
-            self.factors = ['CO|mg/m3|0.1~2|carbon monoxide','NO2|μg/m3|0~60|nitrogen dioxide','O3|μg/m3|60~260|Ozone',
-        'SO2|μg/m3|0~60|sulfur dioxide','NO|μg/m3|0~60|nitric oxide','NH3|μg/m3|0~10|ammonia','HNO3|μg/m3|0~30|nitric acid',
-        'PM25|μg/m3|0~200|fine particulate matter','PM10|μg/m3|30~200|inhalable particulate matter',
-        'PM25_NH4|μg/m3|0~30|ammonium ion in fine particles','PM25_NO3|μg/m3|0~30|nitrate ion in fine particles',
-        'PM25_SO4|μg/m3|0~30|sulfate ion in fine particles','PM25_OC|μg/m3|0~50|organic carbon in fine particles',
-        'PM25_EC|μg/m3|0~10|elemental carbon in fine particles','TS|μg/m3|0~30|Total Sulfur',\
-        'TNN|μg/m3|0~100|Total Nitrate Nitrogen','TAN|μg/m3|0~30|Total Ammonia Nitrogen']
-        #'PM25_Cl|μg/m3|0~5|chlorine ion in fine particles','PM25_SOIL|μg/m3|0~10|Soil matter in fine particles'\
-        #'PM25_Na|μg/m3|0~5|sodium ion in fine particles','PM25_Mg|μg/m3|0~5|magnesium ion in fine particles',\
-        #'PM25_K|μg/m3|0~5|potassium ion in fine particles','PM25_Ca|μg/m3|0~5|calcium ion in fine particles',\
-        #'PM25_POC|μg/m3|0~30|primary organic carbon in fine particles','PM25_POM|μg/m3|0~30|primary organic matter in fine particles',\
-        #'PM25_SOC|μg/m3|0~30|secondary organic carbon in fine particles','PM25_SOM|μg/m3|0~30|secondary organic matter in fine particles'
-            #Extracting station information
-            if self.sites_includedprovinces != ['all']:
-                where_str = 'station_code is not null and station_province in ' \
-                    + str(self.sites_includedprovinces).replace('[','(').replace(']',')')
-            else:
-                where_str = 'station_code is not null'
-            if self.sites_includedcities != ['all']:
-                where_str = where_str + ' and station_city in ' \
-                    + str(self.sites_includedcities).replace('[','(').replace(']',')')
-            ds_station = pandas.read_sql_query('SELECT * FROM Supersite_Sites WHERE ' \
-                    + where_str + ' ORDER BY station_code', airdb_engine)
-            self.siteIDs = ds_station['station_code'].to_numpy().astype(str)
-            self.sitenames = ds_station['station_name'].to_numpy()
-            self.sitelats = ds_station['station_lat'].to_numpy()
-            self.sitelons = ds_station['station_lon'].to_numpy()
-            self.sitecities = ds_station['station_city'].to_numpy()
-            self.siteprovince = ds_station['station_province'].to_numpy()
-            self.sitecols = []
-            self.siterows = []
-            # Filtering sites within the spatial extent of the grid
-            for source_index in range(len(self.source_dirs.split(';'))):
-                init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
-                if not os.path.exists(init_file):
-                    init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
-                if not os.path.exists(init_file):
-                    print('the error of data sources!!')
-                    sys.exit()
-                else:
-                    nc_ds = netCDF4.Dataset(init_file)
-                Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
-                Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
-                Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
-                Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
-                Domain_XORIG = float(nc_ds.getncattr('XORIG'))
-                Domain_YORIG = float(nc_ds.getncattr('YORIG'))
-                Domain_DX = float(nc_ds.getncattr('XCELL'))
-                Domain_DY = float(nc_ds.getncattr('YCELL'))
-                Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
-                Domain_NROWS = int(nc_ds.getncattr('NROWS'))
-                LCCProj = pyproj.Proj(proj='lcc', lat_1=Domain_TRUELAT1,lat_2=Domain_TRUELAT2,lat_0=Domain_CEN_LAT,lon_0=Domain_CEN_LON,a=6370000,b=6370000)
-                lcc_x, lcc_y = LCCProj(self.sitelons, self.sitelats)
-                self.sitecols.append(numpy.trunc((lcc_x - Domain_XORIG) / Domain_DX).astype(int))
-                self.siterows.append(numpy.trunc((lcc_y - Domain_YORIG) / Domain_DY).astype(int))
-                condition = (self.sitecols[source_index] >= 0) & (self.sitecols[source_index] < Domain_NCOLS) \
-                    & (self.siterows[source_index] >= 0) & (self.siterows[source_index] < Domain_NROWS)
-                selected_indices = numpy.where(condition)[0]
-                self.siteIDs = self.siteIDs[selected_indices]
-                self.sitenames = self.sitenames[selected_indices]
-                self.sitelats = self.sitelats[selected_indices]
-                self.sitelons = self.sitelons[selected_indices]
-                self.sitecities = self.sitecities[selected_indices]
-                self.siteprovince = self.siteprovince[selected_indices]
-                self.sitecols[source_index] = self.sitecols[source_index][selected_indices]
-                self.siterows[source_index] = self.siterows[source_index][selected_indices]
-
-
         if self.data_type == 'TROPOMI':
             self.start_day = datetime.datetime.strptime(date_start, "%Y-%m-%d") #Start date, date selection
             self.end_day = datetime.datetime.strptime(date_end, "%Y-%m-%d") #End date, date selection
-            #self.factors = ['NO2|mol/m2|0~0.0192|nitrogen_dioxide_total_column|v221']
             self.factors = ['NO2|mol/m2|0~30|nitrogen_dioxide_total_column|v221']
             #'CO|mol/m2|0~0.07|carbonmonoxide_total_column', 'O3|mol/m2|0~0.3|ozone_total_column','CH4|mol/m2|0~100|methane_total_column']
             self.mpijob_partition = "64c512g"
             self.serialjob_partition = "64c512g"
             self.mpijob_npn = 64
             self.domain = domain.domain_definition('China_12km',35.0,105,25.0,45.0,512,512,12000,12000,-3072000.0,-3072000.0)
-            #self.domain = domain.domain_definition("CHINA_12km","lambert",35.0,105,258,258,25.0,45.0,512,512,12000,12000,-3072000.0,-3072000.0,45,5000)
             self.source_path = self.source_dirs
-            # self.savepath_MP4 = self.output_dir + '/MP4'  # Image output folder
-            # self.single_PNG = self.output_dir + '/MP4_PNG'
+
             nc_ds = netCDF4.Dataset(self.source_dirs[1]+'/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc')
             self.Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
             self.Domain_NROWS = int(nc_ds.getncattr('NROWS'))
@@ -258,413 +187,6 @@ class Post_Process():
             self.Domain_YORIG = float(nc_ds.getncattr('YORIG'))
             self.Domain_DX = float(nc_ds.getncattr('XCELL'))
             self.Domain_DY = float(nc_ds.getncattr('YCELL'))
-        
-        if self.data_type == 'adjoint_sensitivity':
-            self.factors = ['CO|CF/(mol/s)|0.000005~0.001|carbon monoxide',\
-                'SO2|CF/(mol/s)|0.000005~0.001|SO2', 'NO|CF/(mol/s)|0.000005~0.001|NO', 'NO2|CF/(mol/s)|0.000005~0.001|NO2',\
-                'NH3|CF/(mol/s)|0.000005~0.001|NH3', 'VOCs|CF/(mol/s)|0.000005~0.001|VOCs', 'PNO3|CF/(g/s)|0.000005~0.001|primary NO3 emission',\
-                'PMC|CF/(g/s)|0.000005~0.001|primary coarse emission','PSO4|CF/(g/s)|0.000005~0.001|primary SO4 emission',\
-                'PEC|CF/(g/s)|0.000005~0.001|primary EC emission', 'POC|CF/(g/s)|0.000005~0.001|primary POC emission',\
-                'PMFINE|CF/(g/s)|0.000005~0.001|primary ohter fine particles emission'] 
-                #VOCs = MEOH+OLE+TERP+TOL+ETHA+ETOH+ETH+FORM+ALDX+IOLE+PAR+XYL+ISOP+ALD2
-            nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[0] + '/lgrid_em_' + self.date_start.strftime('%Y-%m-%d') + '.nc')
-            self.Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
-            self.Domain_NROWS = int(nc_ds.getncattr('NROWS'))
-            self.Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
-            self.Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
-            self.Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
-            self.Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
-            self.Domain_XORIG = float(nc_ds.getncattr('XORIG'))
-            self.Domain_YORIG = float(nc_ds.getncattr('YORIG'))
-            self.Domain_DX = float(nc_ds.getncattr('XCELL'))
-            self.Domain_DY = float(nc_ds.getncattr('YCELL'))
-
-        if self.data_type == 'adjoint_semi_normalized_sensitivity':
-            self.factors = ['CO|CF|0.000005~0.001|carbon monoxide',\
-                'SO2|CF|0.000005~0.001|SO2', 'NO|CF|0.000005~0.001|NO', 'NO2|CF|0.000005~0.001|NO2',\
-                'NH3|CF|0.000005~0.001|NH3', 'VOCs|CF|0.000005~0.001|VOCs', 'PNO3|CF|0.000005~0.001|primary NO3 emission',\
-                'PMC|CF|0.000005~0.001|primary coarse emission','PSO4|CF|0.000005~0.001|primary SO4 emission',\
-                'PEC|CF|0.000005~0.001|primary EC emission', 'POC|CF|0.000005~0.001|primary POC emission',\
-                'PMFINE|CF|0.000005~0.001|primary ohter fine particles emission'] 
-                #VOCs = MEOH+OLE+TERP+TOL+ETHA+ETOH+ETH+FORM+ALDX+IOLE+PAR+XYL+ISOP+ALD2
-            nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[0] + '/lgrid_em_' + self.date_start.strftime('%Y-%m-%d') + '.nc')
-            self.Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
-            self.Domain_NROWS = int(nc_ds.getncattr('NROWS'))
-            self.Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
-            self.Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
-            self.Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
-            self.Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
-            self.Domain_XORIG = float(nc_ds.getncattr('XORIG'))
-            self.Domain_YORIG = float(nc_ds.getncattr('YORIG'))
-            self.Domain_DX = float(nc_ds.getncattr('XCELL'))
-            self.Domain_DY = float(nc_ds.getncattr('YCELL'))
-
-        if self.data_type == 'emission':
-            self.factors = ['CO','NO2','O3','SO2']
-            nc_ds = netCDF4.Dataset(self.source_dirs.split(';')[0] + '/emission_' + self.date_start.strftime('%Y-%m-%d') + '.nc')
-            self.Domain_NCOLS = int(nc_ds.getncattr('NCOLS'))
-            self.Domain_NROWS = int(nc_ds.getncattr('NROWS'))
-            self.Domain_CEN_LAT = float(nc_ds.getncattr('YCENT'))
-            self.Domain_CEN_LON = float(nc_ds.getncattr('XCENT'))
-            self.Domain_TRUELAT1 = float(nc_ds.getncattr('P_ALP'))
-            self.Domain_TRUELAT2 = float(nc_ds.getncattr('P_BET'))
-            self.Domain_XORIG = float(nc_ds.getncattr('XORIG'))
-            self.Domain_YORIG = float(nc_ds.getncattr('YORIG'))
-            self.Domain_DX = float(nc_ds.getncattr('XCELL'))
-            self.Domain_DY = float(nc_ds.getncattr('YCELL'))
-
-        matplotlib.rcParams['agg.path.chunksize'] = 10000
-        self.simhei_font = matplotlib.font_manager.FontProperties\
-            (fname=self.root_dir + "/resources/simhei.ttf")
-        self.timesnr_font = matplotlib.font_manager.FontProperties\
-            (fname=self.root_dir + "/resources/TimesNewRoman.ttf")
-
-    def makefiles_semi_normalized_sensitivity_hourly(self, bwdDir):
-        with open(f'{bwdDir}/BWD.slurm') as f:
-            bwdSlurm = f.read()
-        fwdDir = re.search("FWDDIR.*", bwdSlurm).group().split("=")[-1].strip() + '/'
-        emissionname = f"{fwdDir}/emission.nc"
-        emission = netCDF4.Dataset(emissionname, mode='r', open=True)
-        varLst = ['PMFINE', 'MEOH', 'POC', 'OLE', 'TERP', 'TOL', 'PEC', 'NO', 'ETHA', 'ETOH', 'ETH', 'NO2', 'NH3', 'FORM', 'PNO3', \
-                    'ALDX', 'PMC', 'IOLE', 'PAR', 'XYL', 'PSO4', 'ISOP', 'CO', 'ALD2', 'SO2']
-        for day_index in range((self.date_end - self.date_start).days + 1):
-            current_day  = self.date_start + datetime.timedelta(days=day_index)
-            filename = f"{self.output_dir}/semi_normalized_sensitivity_em_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            if os.path.exists(filename): os.system(f"rm {filename}")
-            lgridPath = f"{bwdDir}/lgrid_em_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-            tflagArr = numpy.array(lgrid.variables["TFLAG"][:][1:25, 0, :])
-            tflagArr = tflagArr.astype(int)
-            conchr = lgrid.variables['PMFINE'][:][:][:][:]
-            ltime, llay, lrow, lcol = conchr.shape
-            ltime = 24
-            # Set to 7 if each layer is required, and 1 if all height layers are cumulative.
-            llay = 1
-            ldattim = 2            
-            sensfile = netCDF4.Dataset(filename, mode='w', format='NETCDF3_64BIT')
-            attrs=["IOAPI_VERSION", "EXEC_ID", "FTYPE", "CDATE", "CTIME", "WDATE", "WTIME", "SDATE", "STIME", \
-                            "TSTEP", "NTHIK", "NCOLS", "NROWS", "GDTYP", "P_ALP", "P_BET", "P_GAM", "XCENT", "YCENT", "XORIG",\
-                            "YORIG", "XCELL", "YCELL", "VGTYP", "VGTOP", "VGLVLS", "GDNAM", "HISTORY"]
-            for attr in attrs:
-                if hasattr(lgrid, attr):
-                    attrVal = getattr(lgrid, attr)
-                    setattr(sensfile, attr, attrVal)
-            setattr(sensfile,"NVARS", len(varLst)) # only one variable
-            setattr(sensfile,"FILEDESC","sensitivity file: lgrid_em * emission")
-
-            sensfile.createDimension("TSTEP", None)
-            sensfile.createDimension("DATE-TIME", ldattim)
-            sensfile.createDimension("LAY", llay)
-            sensfile.createDimension("VAR", len(varLst))
-            sensfile.createDimension("ROW", lrow)
-            sensfile.createDimension("COL", lcol)
-            sensfile.sync()
-            dattim = numpy.zeros([ltime,len(varLst),ldattim])
-            sens_tflag = sensfile.createVariable('TFLAG', 'i4', ('TSTEP', 'VAR', 'DATE-TIME'))
-            for j in range(len(varLst)):
-                dattim[:, j, :] = tflagArr
-            sens_tflag[:] = dattim
-            varattrs=["long_name","units","var_desc"]
-            for varattr in varattrs:
-                if hasattr(lgrid.variables['TFLAG'], varattr): 
-                    varattrVal = getattr(lgrid.variables['TFLAG'], varattr)
-                    setattr(sens_tflag, varattr, varattrVal)
-            for var in varLst:
-                x = int((current_day - self.date_start).days)
-                emissionArr = emission.variables[var][:][:][:][:][x*24+1 : x*24+25,0:7,:,:]
-                lgridArr = lgrid.variables[var][:][:][:][:][1:25, 0:7,:,:]
-                val = numpy.multiply(emissionArr, lgridArr)
-                # Comment this line if each layer needs to be preserved, and keep this line if all layers are totaled.
-                val = numpy.sum(val, axis = 1, keepdims=True)
-                sens_species = sensfile.createVariable(var,'f4',('TSTEP','LAY','ROW','COL'))  
-                sens_species[:] = numpy.zeros([ltime,llay,lrow,lcol])
-                sens_species[:] = numpy.reshape(val,[ltime,llay,lrow,lcol])
-                for varattr in varattrs:
-                    varattrVal = getattr(lgrid.variables[var], varattr)
-                    setattr(sens_species, varattr, varattrVal)
-                setattr(sens_species, 'units', "CF")
-            sensfile.close()
-        emission.close()
-
-    def makefiles_semi_normalized_sensitivity_daily(self):
-        varLst = ['PMFINE', 'MEOH', 'POC', 'OLE', 'TERP', 'TOL', 'PEC', 'NO', 'ETHA', 'ETOH', 'ETH', 'NO2', 'NH3', 'FORM', 'PNO3', \
-                'ALDX', 'PMC', 'IOLE', 'PAR', 'XYL', 'PSO4', 'ISOP', 'CO', 'ALD2', 'SO2']
-        for day_index in range((self.date_end - self.date_start).days + 1):
-            current_day  = self.date_start + datetime.timedelta(days=day_index)
-            filename = f"{self.output_dir}/semi_normalized_sensitivity_em_Day_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            if os.path.exists(filename): os.system(f"rm {filename}")
-            lgridPath = f"{self.output_dir}/semi_normalized_sensitivity_em_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-            tflagArr = numpy.array(lgrid.variables["TFLAG"][:][0:1, 0, :]).astype(int)
-            conchr = lgrid.variables['PMFINE'][:][:][:][:]
-            ltime, llay, lrow, lcol = conchr.shape
-            ltime = 1
-            ldattim = 2            
-            sensfile = netCDF4.Dataset(filename, mode='w', format='NETCDF3_64BIT')
-            attrs=["IOAPI_VERSION", "EXEC_ID", "FTYPE", "CDATE", "CTIME", "WDATE", "WTIME", "SDATE", "STIME", \
-                            "TSTEP", "NTHIK", "NCOLS", "NROWS", "GDTYP", "P_ALP", "P_BET", "P_GAM", "XCENT", "YCENT", "XORIG",\
-                            "YORIG", "XCELL", "YCELL", "VGTYP", "VGTOP", "VGLVLS", "GDNAM", "HISTORY"]
-            for attr in attrs:
-                if hasattr(lgrid, attr):
-                    attrVal = getattr(lgrid, attr)
-                    setattr(sensfile, attr, attrVal)
-            setattr(sensfile,"NVARS", len(varLst)) # only one variable
-            setattr(sensfile,"FILEDESC","sensitivity file: lgrid_em * emission")
-
-            sensfile.createDimension("TSTEP", None)
-            sensfile.createDimension("DATE-TIME", ldattim)
-            sensfile.createDimension("LAY", llay)
-            sensfile.createDimension("VAR", len(varLst))
-            sensfile.createDimension("ROW", lrow)
-            sensfile.createDimension("COL", lcol)
-            sensfile.sync()
-            dattim = numpy.zeros([ltime,len(varLst),ldattim])
-            sens_tflag = sensfile.createVariable('TFLAG', 'i4', ('TSTEP', 'VAR', 'DATE-TIME'))
-            for j in range(len(varLst)):
-                dattim[:, j, :] = tflagArr
-            sens_tflag[:] = dattim
-            # sens_tflag[:] = numpy.reshape(dattim,[ltime,llay,ldattim])
-            varattrs=["long_name","units","var_desc"]
-            for varattr in varattrs:
-                if hasattr(lgrid.variables['TFLAG'], varattr): 
-                    varattrVal = getattr(lgrid.variables['TFLAG'], varattr)
-                    setattr(sens_tflag, varattr, varattrVal)
-            for var in varLst:
-                lgridArr = lgrid.variables[var][:][:][:][:][:, :,:,:]
-                val = numpy.sum(lgridArr, axis = 0, keepdims=True)
-                sens_species = sensfile.createVariable(var,'f4',('TSTEP','LAY','ROW','COL'))  
-                sens_species[:] = numpy.zeros([ltime,llay,lrow,lcol])
-                sens_species[:] = numpy.reshape(val,[ltime,llay,lrow,lcol])
-                for varattr in varattrs:
-                    varattrVal = getattr(lgrid.variables[var], varattr)
-                    setattr(sens_species, varattr, varattrVal)
-                setattr(sens_species, 'units', "CF")
-            sensfile.close()
-
-    def makefiles_semi_normalized_sensitivity_period(self):
-        filename = f"{self.output_dir}/semi_normalized_sensitivity_em_Tot_" + self.date_start.strftime('%Y-%m-%d') + "~" + self.date_end.strftime('%Y-%m-%d') + ".nc"
-        if os.path.exists(filename): os.system(f"rm {filename}")
-        sensfile = netCDF4.Dataset(filename, mode='w', format='NETCDF3_64BIT')    
-        varLst = ['PMFINE', 'MEOH', 'POC', 'OLE', 'TERP', 'TOL', 'PEC', 'NO', 'ETHA', 'ETOH', 'ETH', 'NO2', 'NH3', 'FORM', 'PNO3', \
-                'ALDX', 'PMC', 'IOLE', 'PAR', 'XYL', 'PSO4', 'ISOP', 'CO', 'ALD2', 'SO2']
-        lgridPath = f"{self.output_dir}/semi_normalized_sensitivity_em_Day_" + self.date_start.strftime('%Y-%m-%d') + ".nc"
-        lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-        tflagArr = numpy.array(lgrid.variables["TFLAG"][:][0:1, 0, :]).astype(int)
-        # shape : (25, 44, 106, 88)
-        conchr = lgrid.variables['PMFINE'][:][:][:][:]
-        ltime, llay, lrow, lcol = conchr.shape
-        ldattim = 2
-        attrs=["IOAPI_VERSION", "EXEC_ID", "FTYPE", "CDATE", "CTIME", "WDATE", "WTIME", "SDATE", "STIME", \
-                        "TSTEP", "NTHIK", "NCOLS", "NROWS", "GDTYP", "P_ALP", "P_BET", "P_GAM", "XCENT", "YCENT", "XORIG",\
-                        "YORIG", "XCELL", "YCELL", "VGTYP", "VGTOP", "VGLVLS", "GDNAM", "HISTORY"]
-        for attr in attrs:
-            if hasattr(lgrid, attr):
-                attrVal = getattr(lgrid, attr)
-                setattr(sensfile, attr, attrVal)
-        setattr(sensfile,"NVARS", len(varLst)) # only one variable
-        setattr(sensfile,"FILEDESC","sensitivity file: lgrid_em * emission")
-
-        sensfile.createDimension("TSTEP", None)
-        sensfile.createDimension("DATE-TIME", ldattim)
-        sensfile.createDimension("LAY", llay)
-        sensfile.createDimension("VAR", len(varLst))
-        sensfile.createDimension("ROW", lrow)
-        sensfile.createDimension("COL", lcol)
-        sensfile.sync()
-
-        sens_tflag = sensfile.createVariable('TFLAG', 'i4', ('TSTEP', 'VAR', 'DATE-TIME'))
-        dattim = numpy.zeros([ltime,len(varLst),ldattim])
-        for j in range(len(varLst)):
-            dattim[:, j, :] = tflagArr
-        sens_tflag[:] = dattim
-        varattrs=["long_name","units","var_desc"]
-        for varattr in varattrs:
-            if hasattr(lgrid.variables['TFLAG'], varattr): 
-                varattrVal = getattr(lgrid.variables['TFLAG'], varattr)
-                setattr(sens_tflag, varattr, varattrVal)
-        ans = numpy.zeros([len(varLst), ltime, llay, lrow, lcol])
-        for day_index in range((self.date_end - self.date_start).days + 1):
-            current_day  = self.date_start + datetime.timedelta(days=day_index)
-            lgridPath = f"{self.output_dir}/semi_normalized_sensitivity_em_Day_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-            for i, var in enumerate(varLst):
-                lgridArr = lgrid.variables[var][:][:][:][:][:, :,:,:]
-                ans[i, : :, :, :] = ans[i, : :, :, :] + lgridArr
-        for i, var in enumerate(varLst):
-            val = ans[i, :, :, :, :]
-            sens_species = sensfile.createVariable(var,'f4',('TSTEP','LAY','ROW','COL'))  
-            sens_species[:] = numpy.zeros([ltime,llay,lrow,lcol])
-            sens_species[:] = numpy.reshape(val,[ltime,llay,lrow,lcol])
-            for varattr in varattrs:
-                varattrVal = getattr(lgrid.variables[var], varattr)
-                setattr(sens_species, varattr, varattrVal)
-
-    def makefiles_sensitivity_hourly(self, bwdDir):   
-        varLst = ['PMFINE', 'MEOH', 'POC', 'OLE', 'TERP', 'TOL', 'PEC', 'NO', 'ETHA', 'ETOH', 'ETH', 'NO2', 'NH3', 'FORM', 'PNO3', \
-                'ALDX', 'PMC', 'IOLE', 'PAR', 'XYL', 'PSO4', 'ISOP', 'CO', 'ALD2', 'SO2']
-        for day_index in range((self.date_end - self.date_start).days + 1):
-            current_day  = self.date_start + datetime.timedelta(days=day_index)
-            filename = f"{self.output_dir}/sensitivity_em_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            if os.path.exists(filename): os.system(f"rm {filename}")
-            lgridPath = f"{bwdDir}/lgrid_em_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-            # print(numpy.array(lgrid.variables["TFLAG"][:])[0:1, 0, :].shape)
-            tflagArr = numpy.array(lgrid.variables["TFLAG"][:][1:, 0, :]).astype(int)
-            # shape : (25, 44, 106, 88)
-            conchr = lgrid.variables['PMFINE'][:][:][:][:]
-            ltime, llay, lrow, lcol = conchr.shape
-            ltime = 24
-            llay = 1
-            ldattim = 2
-            sensfile = netCDF4.Dataset(filename, mode='w', format='NETCDF3_64BIT')
-            attrs=["IOAPI_VERSION", "EXEC_ID", "FTYPE", "CDATE", "CTIME", "WDATE", "WTIME", "SDATE", "STIME", \
-                            "TSTEP", "NTHIK", "NCOLS", "NROWS", "GDTYP", "P_ALP", "P_BET", "P_GAM", "XCENT", "YCENT", "XORIG",\
-                            "YORIG", "XCELL", "YCELL", "VGTYP", "VGTOP", "VGLVLS", "GDNAM", "HISTORY"]
-            for attr in attrs:
-                if hasattr(lgrid, attr):
-                    attrVal = getattr(lgrid, attr)
-                    setattr(sensfile, attr, attrVal)
-            setattr(sensfile,"NVARS", len(varLst)) # only one variable
-            setattr(sensfile,"FILEDESC",getattr(lgrid, "FILEDESC"))
-
-            sensfile.createDimension("TSTEP", None)
-            sensfile.createDimension("DATE-TIME", ldattim)
-            sensfile.createDimension("LAY", llay)
-            sensfile.createDimension("VAR", len(varLst))
-            sensfile.createDimension("ROW", lrow)
-            sensfile.createDimension("COL", lcol)
-            sensfile.sync()
-            dattim = numpy.zeros([ltime,len(varLst),ldattim])
-            sens_tflag = sensfile.createVariable('TFLAG', 'i4', ('TSTEP', 'VAR', 'DATE-TIME'))
-            for j in range(len(varLst)):
-                dattim[:, j, :] = tflagArr
-            sens_tflag[:] = dattim
-            varattrs=["long_name","units","var_desc"]
-            for varattr in varattrs:
-                if hasattr(lgrid.variables['TFLAG'], varattr): 
-                    varattrVal = getattr(lgrid.variables['TFLAG'], varattr)
-                    setattr(sens_tflag, varattr, varattrVal)
-            for var in varLst:
-                lgridArr = lgrid.variables[var][:][:][:][:][1:, :,:,:]
-                val = numpy.sum(lgridArr, axis = 1, keepdims=True)
-                sens_species = sensfile.createVariable(var,'f4',('TSTEP','LAY','ROW','COL'))  
-                sens_species[:] = numpy.zeros([ltime,llay,lrow,lcol])
-                sens_species[:] = numpy.reshape(val,[ltime,llay,lrow,lcol])
-                for varattr in varattrs:
-                    varattrVal = getattr(lgrid.variables[var], varattr)
-                    setattr(sens_species, varattr, varattrVal)
-                # setattr(sens_species, 'units', "CF")
-            sensfile.close()
-
-    def makefiles_sensitivity_daily(self): 
-        varLst = ['PMFINE', 'MEOH', 'POC', 'OLE', 'TERP', 'TOL', 'PEC', 'NO', 'ETHA', 'ETOH', 'ETH', 'NO2', 'NH3', 'FORM', 'PNO3', \
-                'ALDX', 'PMC', 'IOLE', 'PAR', 'XYL', 'PSO4', 'ISOP', 'CO', 'ALD2', 'SO2']
-        for day_index in range((self.date_end - self.date_start).days + 1):
-            current_day  = self.date_start + datetime.timedelta(days=day_index)
-            filename = f"{self.output_dir}/sensitivity_em_Day_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            if os.path.exists(filename): os.system(f"rm {filename}")
-            lgridPath = f"{self.output_dir}/sensitivity_em_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-            tflagArr = numpy.array(lgrid.variables["TFLAG"][:][0:1, 0, :]).astype(int)
-            conchr = lgrid.variables['PMFINE'][:][:][:][:]
-            ltime, llay, lrow, lcol = conchr.shape
-            ltime = 1
-            ldattim = 2
-            sensfile = netCDF4.Dataset(filename, mode='w', format='NETCDF3_64BIT')
-            attrs=["IOAPI_VERSION", "EXEC_ID", "FTYPE", "CDATE", "CTIME", "WDATE", "WTIME", "SDATE", "STIME", \
-                            "TSTEP", "NTHIK", "NCOLS", "NROWS", "GDTYP", "P_ALP", "P_BET", "P_GAM", "XCENT", "YCENT", "XORIG",\
-                            "YORIG", "XCELL", "YCELL", "VGTYP", "VGTOP", "VGLVLS", "GDNAM", "HISTORY"]
-            for attr in attrs:
-                if hasattr(lgrid, attr):
-                    attrVal = getattr(lgrid, attr)
-                    setattr(sensfile, attr, attrVal)
-            setattr(sensfile,"NVARS", len(varLst)) # only one variable
-            setattr(sensfile,"FILEDESC","lgrid_em file: sum of one day")
-
-            sensfile.createDimension("TSTEP", None)
-            sensfile.createDimension("DATE-TIME", ldattim)
-            sensfile.createDimension("LAY", llay)
-            sensfile.createDimension("VAR", len(varLst))
-            sensfile.createDimension("ROW", lrow)
-            sensfile.createDimension("COL", lcol)
-            sensfile.sync()
-            dattim = numpy.zeros([ltime,len(varLst),ldattim])
-            sens_tflag = sensfile.createVariable('TFLAG', 'i4', ('TSTEP', 'VAR', 'DATE-TIME'))
-            for j in range(len(varLst)):
-                dattim[:, j, :] = tflagArr
-            sens_tflag[:] = dattim
-            varattrs=["long_name","units","var_desc"]
-            for varattr in varattrs:
-                if hasattr(lgrid.variables['TFLAG'], varattr): 
-                    varattrVal = getattr(lgrid.variables['TFLAG'], varattr)
-                    setattr(sens_tflag, varattr, varattrVal)
-            for var in varLst:
-                lgridArr = lgrid.variables[var][:][:][:][:][:, :,:,:]
-                val = numpy.sum(lgridArr, axis = 0, keepdims=True)
-                sens_species = sensfile.createVariable(var,'f4',('TSTEP','LAY','ROW','COL'))  
-                sens_species[:] = numpy.zeros([ltime,llay,lrow,lcol])
-                sens_species[:] = numpy.reshape(val,[ltime,llay,lrow,lcol])
-                for varattr in varattrs:
-                    varattrVal = getattr(lgrid.variables[var], varattr)
-                    setattr(sens_species, varattr, varattrVal)
-                # setattr(sens_species, 'units', "CF")
-            sensfile.close()
-
-    def makefiles_sensitivity_period(self):
-        filename = f"{self.output_dir}/sensitivity_em_Tot_" + self.date_start.strftime('%Y-%m-%d') + "~" + self.date_end.strftime('%Y-%m-%d') + ".nc"
-        if os.path.exists(filename): os.system(f"rm {filename}")
-        sensfile = netCDF4.Dataset(filename, mode='w', format='NETCDF3_64BIT')  
-        varLst = ['PMFINE', 'MEOH', 'POC', 'OLE', 'TERP', 'TOL', 'PEC', 'NO', 'ETHA', 'ETOH', 'ETH', 'NO2', 'NH3', 'FORM', 'PNO3', \
-                'ALDX', 'PMC', 'IOLE', 'PAR', 'XYL', 'PSO4', 'ISOP', 'CO', 'ALD2', 'SO2']
-        lgridPath = f"{self.output_dir}/sensitivity_em_Day_" + self.date_start.strftime('%Y-%m-%d') + ".nc"
-        lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-        tflagArr = numpy.array(lgrid.variables["TFLAG"][:][0:1, 0, :]).astype(int)
-        conchr = lgrid.variables['PMFINE'][:][:][:][:]
-        ltime, llay, lrow, lcol = conchr.shape
-        ldattim = 2
-        attrs=["IOAPI_VERSION", "EXEC_ID", "FTYPE", "CDATE", "CTIME", "WDATE", "WTIME", "SDATE", "STIME", \
-                        "TSTEP", "NTHIK", "NCOLS", "NROWS", "GDTYP", "P_ALP", "P_BET", "P_GAM", "XCENT", "YCENT", "XORIG",\
-                        "YORIG", "XCELL", "YCELL", "VGTYP", "VGTOP", "VGLVLS", "GDNAM", "HISTORY"]
-        for attr in attrs:
-            if hasattr(lgrid, attr):
-                attrVal = getattr(lgrid, attr)
-                setattr(sensfile, attr, attrVal)
-        setattr(sensfile,"NVARS", len(varLst)) # only one variable
-        setattr(sensfile,"FILEDESC","total sensitivity file")
-
-        sensfile.createDimension("TSTEP", None)
-        sensfile.createDimension("DATE-TIME", ldattim)
-        sensfile.createDimension("LAY", llay)
-        sensfile.createDimension("VAR", len(varLst))
-        sensfile.createDimension("ROW", lrow)
-        sensfile.createDimension("COL", lcol)
-        sensfile.sync()
-        sens_tflag = sensfile.createVariable('TFLAG', 'i4', ('TSTEP', 'VAR', 'DATE-TIME'))
-        dattim = numpy.zeros([ltime,len(varLst),ldattim])
-        for j in range(len(varLst)):
-            dattim[:, j, :] = tflagArr
-        sens_tflag[:] = dattim
-        varattrs=["long_name","units","var_desc"]
-        for varattr in varattrs:
-            if hasattr(lgrid.variables['TFLAG'], varattr): 
-                varattrVal = getattr(lgrid.variables['TFLAG'], varattr)
-                setattr(sens_tflag, varattr, varattrVal)
-        ans = numpy.zeros([len(varLst), ltime, llay, lrow, lcol])
-        for day_index in range((self.date_end - self.date_start).days + 1):
-            current_day  = self.date_start + datetime.timedelta(days=day_index)
-            lgridPath = f"{self.output_dir}/sensitivity_em_Day_" + current_day.strftime('%Y-%m-%d') + ".nc"
-            lgrid = netCDF4.Dataset(lgridPath, mode='r', open=True)
-            for i, var in enumerate(varLst):
-                lgridArr = lgrid.variables[var][:][:][:][:][:, :,:,:]
-                ans[i, : :, :, :] = ans[i, : :, :, :] + lgridArr
-        for i, var in enumerate(varLst):
-            val = ans[i, :, :, :, :]
-            sens_species = sensfile.createVariable(var,'f4',('TSTEP','LAY','ROW','COL'))  
-            sens_species[:] = numpy.zeros([ltime,llay,lrow,lcol])
-            sens_species[:] = numpy.reshape(val,[ltime,llay,lrow,lcol])
-            for varattr in varattrs:
-                varattrVal = getattr(lgrid.variables[var], varattr)
-                setattr(sens_species, varattr, varattrVal)
 
     def draw_Tropomi_PNG(self, dataset, datetime, factor_index):
         factor_name = self.factors[factor_index].split('|')[0]
@@ -675,8 +197,7 @@ class Post_Process():
         fig = plt.figure(figsize=(8, 6))
         ax = fig.add_subplot(1, 1, 1, projection=self.domain.LCCProj_crs)
         # Setting the display range
-        ax.set_extent(self.domain.LCC_plotextent, crs=self.domain.LCCProj_crs)   
-        # ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())     
+        ax.set_extent(self.domain.LCC_plotextent, crs=self.domain.LCCProj_crs)       
         # Read and process terrain data
         dem_file = self.root_dir + "/resources/ETOPO2v2g_f4.nc"
         f = xarray.open_dataset(dem_file)
@@ -724,55 +245,42 @@ class Post_Process():
         ret = ax.projection.transform_points(ccrs.PlateCarree(), numpy.array(lon_ad), numpy.array(lat_ad))
         x = ret[..., 0]
         y = ret[..., 1]
-        # 获取数据范围
-        # 创建掩码，将NaN值标记为True
+        # Getting the data range
+        # Creates a mask, marking the NaN value as True
         mask = numpy.isnan(dataset[2])
 
-        # 使用掩码将NaN值替换为灰色
+        # Replacing NaN values with gray using a mask
         dataset_mask = numpy.where(mask, -999.0, dataset[2])
         minvalue = dataset_mask.min()
         maxvalue = dataset_mask.max()
         
-        #minvalue = float(self.factors[factor_index].split('|')[2].split('~')[0])
-        #maxvalue = float(self.factors[factor_index].split('|')[2].split('~')[1])
-        # 自定义颜色条
+        minvalue = float(self.factors[factor_index].split('|')[2].split('~')[0])
+        maxvalue = float(self.factors[factor_index].split('|')[2].split('~')[1])
         
-        # conc_color = ['blue', 'cyan', 'yellow', 'orange', 'red']
-        # mycmap = col.LinearSegmentedColormap.from_list('own', conc_color, N=len(conc_color))
-        # my_cmap_aplpha = mycmap(numpy.arange(mycmap.N))
-        # for i in range(my_cmap_aplpha.shape[0]):
-        #     if i < 1:
-        #         my_cmap_aplpha[i, -1] = 0.9
-        #     else:
-        #         my_cmap_aplpha[i, -1] = 0.9
-        # my_cmap_aplpha = col.ListedColormap(my_cmap_aplpha, name='myowncolor')
-        # 在地图上绘制数据
+        # Custom Color Bars
         conc_color = ['white', 'blue', 'cyan', 'yellow', 'red']
-        # c_levels = [x for x in numpy.linspace( minvalue, maxvalue, num=len(conc_color) + 1)]
-        # c_levels = [-999] + c_levels
-        c_levels = [-999, 0, 6, 12, 18, 24, 30]
+        c_levels = [x for x in numpy.linspace( minvalue, maxvalue, num=len(conc_color) + 1)]
+        c_levels = [-999] + c_levels
+ 
         my_norm = col.BoundaryNorm(c_levels, 6)
         my_cmap = col.ListedColormap(['grey', 'white', 'blue', 'cyan', 'yellow', 'red'])
         p = ax.pcolormesh(x, y, dataset_mask, norm=my_norm,\
             cmap=my_cmap)
-        #p = ax.contourf(x, y, dataset_mask, norm=my_norm,\
-        #    cmap=my_cmap)
-        # 添加颜色条
 
-        # 使用 plt.axes 添加独立的坐标轴，并创建颜色条
+        # Use plt.axes to add separate axes and create color bars
         cax = plt.axes([0.9, 0.15, 0.03, 0.7])  # [left, bottom, width, height]
         cbar = plt.colorbar(p, cax=cax, ticks=c_levels)
 
-        # 在颜色条上添加NaN字符标签
+        # Adding NaN character labels to the color bar
         cbar.ax.set_yticklabels([f'{val}' if not val==-999 else 'NaN' for val in c_levels])
 
         plt.text(0.2, 0.95, datetime + ' (BeiJing Time)', fontsize=12, \
                  transform=ax.transAxes, color='r', bbox=dict(facecolor='w', pad=1, alpha=0.7, edgecolor='none'))
-        # 绘制标题
+        # Add Title
         title_str = factor_name + ' (' + self.factors[factor_index].split('|')[3] + ',' + \
             self.factors[factor_index].split('|')[1] + ')'
         ax.set_title(title_str, fontdict={'size': 16, 'weight': 'bold'})
-        # 设置坐标标签、网格线
+        # Setting up coordinate labels, gridlines
         ax.xaxis.set_major_formatter(LONGITUDE_FORMATTER)
         ax.yaxis.set_major_formatter(LATITUDE_FORMATTER)
         self.lon_tickrange = numpy.arange(80,140,10)  # the range of lon to be ticked
@@ -792,7 +300,7 @@ class Post_Process():
         ax.spines['left'].set_visible(True)
         ax.spines['bottom'].set_visible(True)
         ax.spines['top'].set_visible(True)
-        # 保存图片
+        # Save Image
         savename = self.output_dir + '/' + 'Tropomi_' + factor_name + '_' + datetime + '.png'
         print('savename in mp4:',savename) 
         plt.savefig(savename, bbox_inches='tight', dpi=600, format='PNG')
@@ -827,7 +335,7 @@ class Post_Process():
             python_job.write("import multiprocessing\n")
             python_job.write("from osgeo import gdal\n")
             python_job.write("from osgeo import osr\n")
-            # python_job.write("obj_TROPOMI = post_process.Post_Process()\n")
+
             python_job.write("obj_TROPOMI = post_process.Post_Process('" + self.data_type \
                 + "','" + self.date_start.strftime('%Y-%m-%d') + "','" + self.date_end.strftime('%Y-%m-%d') \
                  + "','" + str(self.root_dir) + "','" + str(self.source_dirs) + "')\n")
@@ -840,25 +348,21 @@ class Post_Process():
             python_job.write("    current_time = obj_TROPOMI.start_day + datetime.timedelta(days=day_index)\n")
             python_job.write("    dt_str = current_time.strftime('%Y-%m-%d')\n")                     
             python_job.write("    filename = 'Tropomi_' + 'col_' + factor_name + '_' + current_time.strftime('%Y%m%d') + '_' + factor_version +'_gridded.tif'\n")
-            #python_job.write("    df = gdal.Open(filename)\n")             
-            # python_job.write("    if os.path.isfile(obj_TROPOMI.source_path + '/' + factor_name + '/' + filename) :\n")
-            # python_job.write("       df = gdal.Open(obj_TROPOMI.source_path + '/' + factor_name + '/' + filename,)\n")
-            # python_job.write("    else:\n")
-            # python_job.write("       df = gdal.Open(obj_TROPOMI.source_path + '/null_values.tif')\n")
+
             python_job.write("    df = gdal.Open(obj_TROPOMI.source_path + '/' + factor_name + '/' + filename,)\n")
-            python_job.write("    geo_transform = df.GetGeoTransform()\n")  # 获取tif数据的基本信息
-            python_job.write("    prosrs = osr.SpatialReference()\n")#获得给定数据的投影参考系和地理参考系
-            python_job.write("    prosrs.ImportFromWkt(df.GetProjection())\n")#投影参考系
-            python_job.write("    geosrs = prosrs.CloneGeogCS()\n")#地理参考系    
-            python_job.write("    origin_x = geo_transform[0]\n")  # 左上角经度
-            python_job.write("    origin_y = geo_transform[3]\n")  # 左上角纬度
-            python_job.write("    pixel_width = geo_transform[1]\n")  #像元宽度          
-            python_job.write("    pixel_height = geo_transform[5]\n") #像元高度             
-            python_job.write("    n_rows = df.RasterYSize\n")  #行数          
-            python_job.write("    n_cols = df.RasterXSize\n")  #列数            
-            python_job.write("    in_band = df.GetRasterBand(1)\n")  #打开波段            
+            python_job.write("    geo_transform = df.GetGeoTransform()\n")  # Getting basic information about tif data
+            python_job.write("    prosrs = osr.SpatialReference()\n")#Obtain the projection reference system and geographic reference system for the given data
+            python_job.write("    prosrs.ImportFromWkt(df.GetProjection())\n")#projection reference frame
+            python_job.write("    geosrs = prosrs.CloneGeogCS()\n")#geographic reference system    
+            python_job.write("    origin_x = geo_transform[0]\n")  # Longitude top left
+            python_job.write("    origin_y = geo_transform[3]\n")  # Latitude top left
+            python_job.write("    pixel_width = geo_transform[1]\n")  #pixel width          
+            python_job.write("    pixel_height = geo_transform[5]\n") #pixel height             
+            python_job.write("    n_rows = df.RasterYSize\n")  #row          
+            python_job.write("    n_cols = df.RasterXSize\n")  #columns            
+            python_job.write("    in_band = df.GetRasterBand(1)\n")  #Open Band            
             python_job.write("    print(in_band)\n")  
-            python_job.write("    ds = in_band.ReadAsArray()\n")   #读数据
+            python_job.write("    ds = in_band.ReadAsArray()\n")   #read data
             python_job.write("    print(ds)\n") 
             python_job.write("    lon = numpy.linspace(origin_x,(origin_x+pixel_width*n_cols-pixel_width),n_cols)\n")  
             python_job.write("    lat = numpy.linspace(origin_y,(origin_y + pixel_height*n_rows-pixel_height),n_rows)\n")               
@@ -898,7 +402,7 @@ class Post_Process():
             slurm_file.close()
             os.system('sbatch ' + slurm_fname)          
             
-    def Timeseries(self, factor_index, site_index, df_obs, df_simu_sites):  # 各站点各物种的时序对比图        
+    def Timeseries(self, factor_index, site_index, df_obs, df_simu_sites):  # Comparison of the temporal order of species at each site        
         factor_name = self.factors[factor_index].split('|')[0]
         factor_unit = self.factors[factor_index].split('|')[1]
         site_name = self.sitenames[site_index]
@@ -925,9 +429,9 @@ class Post_Process():
         df_obs = x
         if factor_name in df_obs.columns:
             df_obs = df_obs.dropna(subset=[factor_name])
-            df_obs = df_obs.drop(df_obs[(df_obs[factor_name]<-10000)|(df_obs[factor_name]>200000)].index) # 删除异常值的行
+            df_obs = df_obs.drop(df_obs[(df_obs[factor_name]<-10000)|(df_obs[factor_name]>200000)].index) # Remove rows with outliers
             if df_obs[[factor_name]].count().iloc[0] == 0 and len(self.source_dirs.split(';'))==1:
-                return   # 如果观测站没有数据，且只有一个模拟情景，无需画图提前结束
+                return   # If there is no data from the observatory and there is only one simulation scenario, there is no need to draw a map to end it early
             # fill the missing obs datatime with NAN values     
             if len(df_obs) != len(self.date_cover):
                 dt_cover = pandas.DataFrame(self.date_cover)
@@ -938,7 +442,7 @@ class Post_Process():
             df_obs.reset_index(drop=True,inplace=True)
         else: 
             if len(self.source_dirs.split(';'))==1: 
-                return  # 如果观测站没有数据，且只有一个模拟情景，无需画图提前结束
+                return  # If there is no data from the observatory and there is only one simulation scenario, no drawing is required and it ends early
         fig, ax = plt.subplots(figsize=(16,10))
         pandas.plotting.register_matplotlib_converters() 
         ax.set_title(factor_name + ',' + str_site +'(' + str_province + ','+ str_city + ',' + str(site_lon) \
@@ -985,14 +489,14 @@ class Post_Process():
         fig.savefig(self.output_dir  + '/Timeseries/' + figname, bbox_inches='tight')        
         matplotlib.pyplot.close('all')        
 
-    def Scatter(self, factor_index, source_index, df_obs, df_simu_sites): # 某情景某物种所有观测数据和模拟数据的散点对比图
+    def Scatter(self, factor_index, source_index, df_obs, df_simu_sites): # Scatter plot of all observed and modeled data for a species in a scenario
         factor_name = self.factors[factor_index].split('|')[0]
         factor_unit = self.factors[factor_index].split('|')[1]
         factor_desc = self.factors[factor_index].split('|')[3]
-        if factor_name not in df_obs.columns or df_obs[factor_name].count() < 1: # 如果没有观测数据吗，就跳出该物种
+        if factor_name not in df_obs.columns or df_obs[factor_name].count() < 1: # If no observations are available, skip the species
             return
         df_obs = df_obs.dropna(subset=[factor_name])
-        df_obs = df_obs.drop(df_obs[(df_obs[factor_name]<-10000)|(df_obs[factor_name]>200000)].index) # 删除异常值的行
+        df_obs = df_obs.drop(df_obs[(df_obs[factor_name]<-10000)|(df_obs[factor_name]>200000)].index) # Remove rows with outliers
         df_obs = df_obs.rename(columns={factor_name:factor_name+'_obs'})
         df_obs = df_obs.sort_values(by=['TimePoint','SiteCode'],ascending=[True,True])
         x = df_obs.copy()
@@ -1003,7 +507,7 @@ class Post_Process():
         df_simu = df_simu.reset_index(drop=True)
         df_simu = df_simu.sort_values(by=['TimePoint','SiteCode'],ascending=[True,True])
         df_simu = df_simu.rename(columns={'factor_value':factor_name})
-        df_simu = pandas.merge(df_simu, df_obs, on=['TimePoint','SiteCode'])  # 保证两个数据集大小一致
+        df_simu = pandas.merge(df_simu, df_obs, on=['TimePoint','SiteCode'])  # Ensure that both datasets are the same size
         df_simu.to_csv(self.output_dir + '/CSV/' + factor_name + '_source' + str(source_index) + '.csv', sep=',', index=False, header=True)
         df_obs = df_simu[[factor_name+'_obs']]
         df_simu = df_simu[[factor_name]]
@@ -1085,7 +589,7 @@ class Post_Process():
         file_path = self.source_dirs.split(';')[int(source_index)]                   
         if self.data_type == 'WRF': # for WRF
             hour_start = 12 # start from 12 for our wrf running
-            if ('-' not in str(source_index)):  #绝对值
+            if ('-' not in str(source_index)):  #absolute value
                 nc_file = file_path + '/wrfout_d01_' \
                     + (current_day + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00')
                 nc_ds = netCDF4.Dataset(nc_file)
@@ -1110,7 +614,7 @@ class Post_Process():
                     ds_target[:]  = wrf.to_np(ds[1,hour_start:-1,int(layer)-1,:])  
                 nc_ds.close()
                 nc_ds = None
-            if ('-' in str(source_index)):  #差值
+            if ('-' in str(source_index)):  #difference (the result of subtraction)
                 file_path1 = self.source_dirs.split(';')[int(source_index.split('-')[0])]
                 file_path2 = self.source_dirs.split(';')[int(source_index.split('-')[1])]
                 nc_file1 = file_path1 + '/wrfout_d01_' + (current_day + datetime.timedelta(days = -1)).strftime('%Y-%m-%d_12:00:00')
@@ -1137,12 +641,12 @@ class Post_Process():
                 nc_ds1 = None
                 nc_ds2 = None
 
-        if self.data_type == 'CMAQ_regularsites' or self.data_type == 'CMAQ_supersites':
+        if self.data_type == 'CMAQ':
             aconc_file = file_path + '/CCTM_ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc'
             if not os.path.exists(aconc_file):
                 aconc_file = file_path + '/ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc' 
             apm_file = file_path + '/CCTM_APMDIAG_' + current_day.strftime('%Y-%m-%d') + '.nc'
-            if not os.path.exists(apm_file): # CMAQ AE5的粒径分布文件名字较AE6有变化
+            if not os.path.exists(apm_file): # CMAQ AE5 particle size distribution file name change from AE6
                 apm_file = file_path + '/AERODIAM_' + current_day.strftime('%Y-%m-%d') + '.nc'
             airdensity_file = file_path + '/METCRO3D_' + current_day.strftime('%Y-%m-%d') + '.nc'
             if not os.path.exists(airdensity_file):
@@ -1184,7 +688,7 @@ class Post_Process():
                 if 'AERODIAM' in apm_file: AE_version ='AE5'
                 ds_target[:] = self.extract_pm(factor_name, ds_aconc, ds_density, ds_apm, AE_version)            
             
-            if ('-' in str(source_index)):   #差值
+            if ('-' in str(source_index)):   #difference (the result of subtraction)
                 aconc_file1 = file_path1 + '/CCTM_ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc'
                 aconc_file2 = file_path2 + '/CCTM_ACONC_' + current_day.strftime('%Y-%m-%d') + '.nc'
                 if not os.path.exists(aconc_file1):
@@ -1235,7 +739,7 @@ class Post_Process():
                         - self.extract_pm(factor_name, ds_aconc2, ds_density2, ds_apm2, AE_version2)
 
         if self.data_type.lower() == 'adjoint_sensitivity':
-            if ('-' not in str(source_index)):  #绝对值            
+            if ('-' not in str(source_index)):  #absolute value            
                 adjoint_file = self.output_dir + '/sensitivity_em_' + current_day.strftime('%Y-%m-%d') + '.nc'
                 ds_adjoint = xarray.open_dataset(adjoint_file).sel(LAY=0)
                 if factor_name == 'VOCs':
@@ -1244,17 +748,6 @@ class Post_Process():
                         + ds_adjoint['XYL'][:] + ds_adjoint['ISOP'][:] + ds_adjoint['ALD2'][:]
                 else:
                     ds_target[:] = ds_adjoint[factor_name][:]  
-
-        if self.data_type.lower() == 'adjoint_semi_normalized_sensitivity':
-            if ('-' not in str(source_index)):  #绝对值                          
-                adjoint_file = self.output_dir + '/semi_normalized_sensitivity_em_' + current_day.strftime('%Y-%m-%d') + '.nc'
-                ds_adjoint = xarray.open_dataset(adjoint_file).sel(LAY=0)
-                if factor_name == 'VOCs':
-                    ds_target[:] = ds_adjoint['MEOH'][:] + ds_adjoint['OLE'][:] + ds_adjoint['TERP'][:] + ds_adjoint['TOL'][:] + ds_adjoint['ETHA'][:]\
-                        + ds_adjoint['ETOH'][:] + ds_adjoint['ETH'][:] + ds_adjoint['FORM'][:] + ds_adjoint['ALDX'][:] + ds_adjoint['IOLE'][:] + ds_adjoint['PAR'][:]\
-                        + ds_adjoint['XYL'][:] + ds_adjoint['ISOP'][:] + ds_adjoint['ALD2'][:]
-                else:
-                    ds_target[:] = ds_adjoint[factor_name][:]
         return ds_target
     
     def extract_pm(self, factor_name, ds_aconc, ds_density, ds_apm, AE_version): # Reconstruct the PM2.5 and PM10 mass
@@ -1473,7 +966,7 @@ class Post_Process():
             Domain_YORIG = float(wrf.cartopy_ylim(wrfin=nc_ds)[0])
             Domain_DX = float(nc_ds.getncattr('DX'))
             Domain_DY = float(nc_ds.getncattr('DY'))
-        if self.data_type == 'CMAQ_regularsites' or self.data_type == 'CMAQ_supersites': 
+        if self.data_type == 'CMAQ': 
             init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
             if not os.path.exists(init_file):
                 init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
@@ -1503,7 +996,7 @@ class Post_Process():
         self.name_primary = df_primary['city'].to_list()            
         self.minvalue = float(self.factors[factor_index].split('|')[2].split('~')[0])  
         self.maxvalue = float(self.factors[factor_index].split('|')[2].split('~')[1])
-        if '-' in str(source_index):  # 如果比较差异，需要调整图例范围为原来的0.1      
+        if '-' in str(source_index):  # If comparing differences, the legend range needs to be adjusted to the original 0.1    
             self.minvalue = self.minvalue * 0.1
             self.maxvalue = self.maxvalue * 0.1
         self.conc_color = ['white', 'blue', 'cyan', 'yellow', 'red', 'darkred']
@@ -1571,9 +1064,9 @@ class Post_Process():
             self.ax.spines['bottom'].set_visible(True)
             self.ax.spines['top'].set_visible(True)
             hours_count = (current_day - self.date_start).days*24 + hour_index + 1
-            if '-' not in str(source_index):  #绝对值
+            if '-' not in str(source_index):  #absolute value
                 source_name = str(self.source_dirs.split(';')[int(source_index)].split('/')[-1])
-            if '-' in str(source_index): #差值
+            if '-' in str(source_index): #difference (the result of subtraction)
                 source_name = str(self.source_dirs.split(';')[int(source_index.split('-')[0])].split('/')[-1]) \
                     + '-' + str(self.source_dirs.split(';')[int(source_index.split('-')[1])].split('/')[-1])
             savename = self.output_dir + '/' + factor_name + '_' + source_name \
@@ -1588,7 +1081,7 @@ class Post_Process():
         current_day  = self.date_start + datetime.timedelta(days=day_index)          
         minvalue = float(self.factors[factor_index].split('|')[2].split('~')[0])  
         maxvalue = float(self.factors[factor_index].split('|')[2].split('~')[1])
-        if ('-' in str(source_index)):  # 如果比较差异，需要调整图例范围为原来的0.1    
+        if ('-' in str(source_index)):  # If comparing differences, the legend range needs to be adjusted to the original 0.1   
             minvalue = minvalue * 0.1
             maxvalue = maxvalue * 0.1
         conc_color = ['white', 'blue', 'cyan', 'yellow', 'red', 'darkred']
@@ -1613,7 +1106,7 @@ class Post_Process():
             Domain_YORIG = float(wrf.cartopy_ylim(wrfin=nc_ds)[0])
             Domain_DX = float(nc_ds.getncattr('DX'))
             Domain_DY = float(nc_ds.getncattr('DY'))
-        if self.data_type == 'CMAQ_regularsites' or self.data_type == 'CMAQ_supersites':         
+        if self.data_type == 'CMAQ':         
             init_file = self.source_dirs.split(';')[source_index] + '/ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'            
             if not os.path.exists(init_file):
                 init_file = self.source_dirs.split(';')[source_index] + '/CCTM_ACONC_' + self.date_start.strftime('%Y-%m-%d') + '.nc'
@@ -1661,9 +1154,9 @@ class Post_Process():
             ax.get_yaxis().set_visible(False)
             dt_str = (current_day + datetime.timedelta(hours = hour_index + 8))\
                 .strftime('%Y-%m-%d %H_00')
-            if '-' not in str(source_index):  #绝对值
+            if '-' not in str(source_index):  #absolute value
                 source_name = str(self.source_dirs.split(';')[int(source_index)].split('/')[-1])
-            if '-' in str(source_index): #差值
+            if '-' in str(source_index): #difference (the result of subtraction)
                 source_name = str(self.source_dirs.split(';')[int(source_index.split('-')[0])].split('/')[-1]) \
                     + '-' + str(self.source_dirs.split(';')[int(source_index.split('-')[1])].split('/')[-1])            
             savedir = self.output_dir + '/PNG/online_' + source_name + '_' + factor_name + '_Layer' + str(layer)
@@ -1672,9 +1165,9 @@ class Post_Process():
                 + str(round(180 / math.pi * (2 * math.atan(math.exp(mercator_extent[2]/20037508.34*180 * math.pi / 180)) - math.pi / 2), 3))\
                 + '),lat_max(' + str(round(180 / math.pi * (2 * math.atan(math.exp(mercator_extent[3]/20037508.34*180 * math.pi / 180)) - math.pi / 2), 3)) +').png'
             plt.savefig(savename, pad_inches=0, bbox_inches='tight', dpi=600, format='PNG',transparent=True)
-            # 输出图例
-            fig2, c_map_ax = plt.subplots(figsize=(12, 1.5))  # 设置colorbar的尺寸
-            fig2.subplots_adjust(bottom=0.5, top=0.9,left=0.5,right=0.9)  # 调整图的上下边距
+            # Output Legend
+            fig2, c_map_ax = plt.subplots(figsize=(12, 1.5))  # Setting the size of the colorbar
+            fig2.subplots_adjust(bottom=0.5, top=0.9,left=0.5,right=0.9)  # Adjust the top and bottom margins of the diagram
             sm = plt.cm.ScalarMappable(cmap=self.my_cmap_aplpha, norm=plt.Normalize(vmin=minvalue, vmax=maxvalue))
             cb = plt.colorbar(sm, cax=c_map_ax, ticks=[x for x in numpy.linspace(minvalue,maxvalue,num=len(conc_color)+1)], orientation = 'horizontal')
             #cb.set_label('label', fontsize=14) 
@@ -1682,7 +1175,7 @@ class Post_Process():
             fig2.savefig(savedir + '/legend.png', bbox_inches='tight', pad_inches=0)
             plt.close('all')
 
-    def submit_spatial(self,num_nodes): # 提交空间图处理任务
+    def submit_spatial(self,num_nodes): # Submission of space map processing tasks
         job_tag = 'spatial'
         python_file = self.output_dir + '/' + job_tag + '.py'
         python_job = open(python_file, 'w')
@@ -1756,7 +1249,7 @@ class Post_Process():
         slurm_job.close()
         os.system('sbatch ' + slurm_file)       
 
-    def submit_sites(self,num_nodes): # 提取站点数据并进行散点图及时序图绘制
+    def submit_sites(self,num_nodes): # Extracted site data and performed scatterplot and time series plotting
         job_tag = self.data_type
         python_file = self.output_dir + '/' + job_tag + '.py'
         python_job = open(python_file, 'w')
@@ -1769,10 +1262,8 @@ class Post_Process():
         python_job.write("import sys\n") 
         python_job.write('sys.path.append("'+ self.root_dir + '")\n')
         python_job.write("import post_process\n")
-        if (self.data_type == 'WRF') or (self.data_type == 'CMAQ_regularsites'):
-            python_job.write("airdb_engine = sqlalchemy.create_engine('dialect+driver://username:password@host:port/database')\n")
-        if (self.data_type == 'CMAQ_supersites'):
-            python_job.write("airdb_engine = sqlalchemy.create_engine('dialect+driver://username:password@host:port/database')\n")
+        if (self.data_type == 'WRF') or (self.data_type == 'CMAQ'):
+            python_job.write("airdb_engine = sqlalchemy.create_engine('"+ engine_str +"')\n")
         python_job.write("comm = MPI.COMM_WORLD\n")
         python_job.write("rank = comm.Get_rank()\n")
         python_job.write("size = comm.Get_size()\n")
@@ -1803,27 +1294,11 @@ class Post_Process():
             + \"FROM t_weather_data WHERE station_code IN ('\" + \"','\".join(objProcess.siteIDs) \
             + \"') AND TimePoint BETWEEN '\" + (objProcess.date_start + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' AND '\" \
             + (objProcess.date_end + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' ORDER BY TimePoint\"\n")
-        if self.data_type == 'CMAQ_regularsites':
+        if self.data_type == 'CMAQ':
             python_job.write("        ds_sql = \"SELECT \" + factor_name.lower() + \",station_code,pubtime FROM t_na_station_realtime \" \
             + \"WHERE station_code IN ('\" + \"','\".join(objProcess.siteIDs) + \"') AND pubtime BETWEEN '\" \
             + (objProcess.date_start + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' AND '\" + (objProcess.date_end + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") \
             + \"' ORDER BY pubtime\"\n")
-        if self.data_type == 'CMAQ_supersites':
-            python_job.write("        factor_axis = factor_name + '_ug_m3'\n")
-            python_job.write("        if 'PM25_' in factor_name.upper():\n")
-            python_job.write("            factor_axis = factor_name.replace('PM25_','') + '_ug_m3'\n")            
-            python_job.write("        if factor_name.upper()=='CO':\n")
-            python_job.write("            factor_axis = 'CO_mg_m3'\n")
-            python_job.write("        if factor_name.upper()=='TS':\n")
-            python_job.write("            factor_axis = '(SO2_ug_m3*1/2+SO4_ug_m3*1/3) AS TS'\n")
-            python_job.write("        if factor_name.upper()=='TNN':\n")
-            python_job.write("            factor_axis = '(NO_ug_m3*14/(14+16)+NO2_ug_m3*14/(14+32)+HNO3_ug_m3*14/(14+1+48)+NO3_ug_m3*14/(14+48)) AS TNN'\n")
-            python_job.write("        if factor_name.upper()=='TAN':\n")
-            python_job.write("            factor_axis = '(NH3_ug_m3*14/17+NH4_ug_m3*14/18) AS TAN'\n")
-            python_job.write("        ds_sql = \"SELECT \" + factor_axis + \", station_code,obs_time FROM Supersite_PM_GAS \" \
-                + \"WHERE station_code IN ('\" + \"','\".join(objProcess.siteIDs) + \"') AND obs_time BETWEEN '\" \
-                + (objProcess.date_start + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") + \"' AND '\" + (objProcess.date_end + datetime.timedelta(hours=8)).strftime(\"%Y-%m-%d %H:00\") \
-                + \"' ORDER BY station_code, obs_time\"\n")
         python_job.write("        df_obs = pandas.DataFrame(numpy.array(pandas.read_sql_query(ds_sql, airdb_engine)))\n")
         python_job.write("        df_obs.columns=[factor_name,'SiteCode','TimePoint']\n")
         python_job.write("        df_obs.drop_duplicates(subset=['SiteCode','TimePoint'],keep='first',inplace=True)\n")
@@ -1836,7 +1311,7 @@ class Post_Process():
         python_job.write("else:\n")
         python_job.write("    objProcess = comm.bcast(None, root=0)\n")
         python_job.write("    list_obs = comm.bcast(None, root=0)\n")
-        #加载模拟数据
+        #Load Analog Data
         python_job.write("df_simu_sites = pandas.DataFrame()\n")
         python_job.write("total_iterations = len(objProcess.source_dirs.split(';')) * len(objProcess.factors) * ((objProcess.date_end - objProcess.date_start).days + 1)\n")
         python_job.write("iterations_per_process = total_iterations // size\n")
@@ -1865,7 +1340,7 @@ class Post_Process():
         python_job.write("    df_simu_sites = pandas.concat(df_simu_list, ignore_index=True)\n")
         python_job.write("df_simu_sites = comm.allgather(df_simu_sites)\n")
         python_job.write("df_simu_sites = pandas.concat(df_simu_sites, axis=0, ignore_index=True)\n")
-        # 开始散点图        
+        # Start Scatterplot        
         python_job.write("comm.Barrier()\n")
         python_job.write("total_iterations = len(objProcess.source_dirs.split(';')) * len(objProcess.factors)\n")
         python_job.write("iterations_per_process = total_iterations // size\n")
@@ -1877,7 +1352,7 @@ class Post_Process():
         python_job.write("    source_index = (global_index // (len(objProcess.factors))) % len(objProcess.source_dirs.split(';'))\n")
         python_job.write("    if not list_obs[factor_index].empty:\n")
         python_job.write("        objProcess.Scatter(factor_index,source_index,list_obs[factor_index],df_simu_sites)\n")
-        # 开始时序图
+        # Start Time-series plot
         python_job.write("comm.Barrier()\n")
         python_job.write("total_iterations = len(objProcess.factors) * objProcess.siteIDs.shape[0]\n")
         python_job.write("iterations_per_process = total_iterations // size\n")
@@ -1913,11 +1388,11 @@ class Post_Process():
 
     def run(self):
         if len(set(self.source_dirs.split(';')))!=len(self.source_dirs.split(';')):
-            print('数据源有重复输入，请检查！')
+            print('There are duplicate entries in the data source, please check!')
             sys.exit ()
         print('Post processing start at: ' + datetime.datetime.now().strftime('%m-%d %H:%M'));
         self.output_dir = self.root_dir + '/PostProcess_' + self.data_type + '_' + self.date_start.strftime('%Y-%m-%d') \
-            + '~' + self.date_end.strftime('%Y-%m-%d') # 后处理结果保存在家目录下
+            + '~' + self.date_end.strftime('%Y-%m-%d') # Post-processing results are saved in the root directory
         if os.path.exists(self.output_dir):
             shutil.rmtree(self.output_dir, ignore_errors=True)
         os.makedirs(self.output_dir)
@@ -1933,32 +1408,12 @@ class Post_Process():
                         + '_' + self.factors[factor_index].split('|')[0] + '_Layer' + str(self.extracted_layers[layer_index])
                     os.makedirs(savedir)
 
-        self.submit_spatial(2)  # 提交画图任务
-        self.submit_sites(2)  # 提交站点图任务
-
-        if self.data_type.lower() == 'adjoint_sensitivity':
-            os.makedirs(self.output_dir + '/hourly')
-            os.makedirs(self.output_dir + '/daily')
-            os.makedirs(self.output_dir + '/period')
-
-        if self.data_type.lower() == 'adjoint_semi_normalized_sensitivity':               
-            os.makedirs(self.output_dir + '/hourly')
-            os.makedirs(self.output_dir + '/daily')
-            os.makedirs(self.output_dir + '/period')
-
-        for source_index in range(len(self.source_dirs.split(';'))): # 针对每个数据源进行处理
-            if self.data_type.lower() == 'adjoint_sensitivity':
-                self.makefiles_sensitivity_hourly(self.source_dirs.split(';')[int(source_index)])
-                self.makefiles_sensitivity_daily()
-                self.makefiles_sensitivity_period()
-            if self.data_type.lower() == 'adjoint_semi_normalized_sensitivity':
-                self.makefiles_semi_normalized_sensitivity_hourly(self.source_dirs.split(';')[int(source_index)])
-                self.makefiles_semi_normalized_sensitivity_daily()
-                self.makefiles_semi_normalized_sensitivity_period()            
+        self.submit_spatial(2)  # Submit spatial drawing tasks
+        self.submit_sites(2)  # Submit site data drawing tasks
 
         finish_flag = False
         while not finish_flag:
-            finish_flag = True # 所有log文件都包含well done表明工作正常结束
+            finish_flag = True # All log files contain 'well done' to indicate that the job ended normally.
             if len(glob.glob(self.output_dir + '/*.log')) < 1: finish_flag = False
             for file in glob.glob(self.output_dir + '/*.log'):
                 if (not 'well done' in open(file, 'r').read()): finish_flag = False

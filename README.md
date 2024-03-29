@@ -81,7 +81,19 @@ airdb_engine = sqlalchemy.create_engine("dialect+driver://username:password@host
 ```
 
 ### Step 6. Job submission using Slurm
-Edit the configurations in /PostAtmos/samples/post_process_samples.slurm that are labeled in the sample file and run:  
+Edit the configurations in /PostAtmos/samples/post_process_samples.slurm that are labeled in the sample file
+```
+# Confirm the modification. The eight parameters are 
+# processing type (WRF or CMAQ),
+# start and end dates, path of the PostAtmos,
+# paths of the simulation data to be verified. Multiple paths should be separated by semicolons. Multiple paths can have different grid settings.
+# data filtering configurations
+objProcess = Post_Process('CMAQ','2019-01-14','2019-01-14',\
+ root_dir, root_dir+'/data',\
+ extracted_layers,sites_includedprovinces,sites_includedcities);
+```
+
+and run:  
 ```shell
 $ sbatch /PostAtmos/samples/post_process_samples.slurm
 ```
