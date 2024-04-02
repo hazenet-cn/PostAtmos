@@ -40,7 +40,7 @@ def calc_kernel(samp):
     return stats.gaussian_kde(samp)(samp)
 engine_str = "dialect+driver://username:password@host:port/database"
 airdb_engine = sqlalchemy.create_engine(engine_str)  #observation station and data
-
+python_path = "/Path/To/.conda/envs/env_air/bin"
 class Post_Process():
     def __init__(self,data_type,date_start,date_end,root_dir,source_dirs,extracted_layers,sites_includedprovinces,sites_includedcities):
         self.data_type = data_type
@@ -54,6 +54,8 @@ class Post_Process():
         self.sites_includedcities = sites_includedcities
         self.heiti_font = matplotlib.font_manager.FontProperties\
             (fname=root_dir + "/resources/simhei.ttf", size=25)
+        self.timesnr_font = matplotlib.font_manager.FontProperties\
+            (fname=root_dir + "/resources/TimesNewRoman.ttf", size=25)
         if self.data_type == 'WRF':
             self.factors = ['TC|°(C)|-10~40|ambient temperature','WS|m/s|0~10|ambient wind speed',\
         'WD|degree|0~360|ambient wind direction','Pressure|hPa|900~1020|ambient pressure',\
@@ -1244,6 +1246,7 @@ class Post_Process():
         slurm_job.write("#SBATCH --error=" + self.output_dir + "/" + job_tag + ".log\n")
         slurm_job.write("#SBATCH -N " + str(num_nodes) + " \n")
         slurm_job.write("#SBATCH --exclusive\n")
+        slurm_job.write('source ' + python_path + '/activate\n')
         slurm_job.write('mpirun -n '+ str(num_nodes*64) + ' python ' + self.output_dir + '/' + job_tag + '.py' \
             + ' >& ' + self.output_dir + '/' + job_tag + '.log\n')
         slurm_job.close()
@@ -1381,6 +1384,7 @@ class Post_Process():
         slurm_job.write("#SBATCH --error=" + self.output_dir + "/" + job_tag + ".log\n")
         slurm_job.write("#SBATCH -N " + str(num_nodes) + " \n")
         slurm_job.write("#SBATCH --exclusive\n")
+        slurm_job.write('source ' + python_path + '/activate\n')
         slurm_job.write('mpirun -n '+ str(num_nodes*64) + ' python ' + self.output_dir + '/' + job_tag + '.py' \
             + ' >& ' + self.output_dir + '/' + job_tag + '.log\n')
         slurm_job.close()

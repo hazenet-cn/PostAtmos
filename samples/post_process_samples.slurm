@@ -23,7 +23,7 @@ sites_includedcities =['all'] # Administrative division II, for example, 'all', 
 # paths of the simulation data to be verified. Multiple paths should be separated by semicolons. Multiple paths can have different grid settings.
 # data filtering configurations
 objProcess = Post_Process('CMAQ','2019-01-14','2019-01-14',\
- root_dir, root_dir+'/data',\
+ root_dir, root_dir+'/data/simulation',\
  extracted_layers,sites_includedprovinces,sites_includedcities);
 objProcess.run();"
  
