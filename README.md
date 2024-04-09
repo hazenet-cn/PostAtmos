@@ -139,4 +139,8 @@ Variables recommended for modification in post_process.py and their meaning:
 |  10    | `dpi`                | 600                     | Image resolution                              |
 
 ## Contact and Support
-Please report any bugs through 'Issues'
+- Please report any bugs through 'Issues'.  
+
+- Contact to us:  
+chengz88@sjtu.edu.cn  
+liujiayin@sjtu.edu.cn  
