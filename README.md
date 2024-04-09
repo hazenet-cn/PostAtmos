@@ -1,8 +1,8 @@
-# PostAtmos
+# PostNC
 
-Post-processor "PostAtmos" from the paper “Rapid graphical validation of atmospheric modeling relies on high-performance computing” built in Python. By harnessing the parallel computational capabilities of high-performance computing platforms, it can successfully accelerate the validation process by approximately 165 times compared to traditional serial techniques.
+Post-processor PostNC from the paper “Rapid graphical validation of NetCDF-based modeling relies on high-performance computing: case study of atmospheric models” built in Python. By harnessing the parallel computational capabilities of high-performance computing platforms, it can successfully accelerate the validation process by approximately 165 times compared to traditional serial techniques.
 
-<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/post_process.png"  width = "70%" height = "70%"/>
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/post_process.png"  width = "70%" height = "70%"/>
 
 Software Input:  
 Output from WRF or CMAQ runs;  
@@ -17,7 +17,7 @@ Timeseries folder - time series graphs for each site
 The config directory stores conda environment configuration file.  
 The data directory stores a set of test data required to run the program,including simulation data (.nc files) and observation data 
 (.csv files).  
-The samples directory stores the slurm sample files for running PostAtmos, as well as a display of some of the results of running PostAtmos.  
+The samples directory stores the slurm sample files for running PostNC, as well as a display of some of the results of running PostNC.  
 The resources dicrectory stores the background and font files needed in running.
 
 The program currently can recognise output files of CMAQ and WRF.
@@ -31,7 +31,7 @@ The program currently can recognise output files of CMAQ and WRF.
 ## Usage
 
 ### Step 1. Create a conda environment
-/PostAtmos/config/env_air.yml may be used to create a conda environment.  
+/PostNC/config/env_air.yml may be used to create a conda environment.  
 ```shell
 $ conda env create --file env_air.yml --name target_env  
 ```
@@ -67,16 +67,16 @@ CREATE TABLE t_na_station_realtime (
 Import CSV files in MySQL Client: take Mysql workbench as an example:  
 
 Click the destination table  
-<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img1.png"  width = "70%" height = "70%"/>
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/step_img1.png"  width = "70%" height = "70%"/>
 
 Select the table path you want to import  
-<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img2.png"  width = "70%" height = "70%"/>
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/step_img2.png"  width = "70%" height = "70%"/>
 
 Select destination  
-<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img3.png"  width = "70%" height = "70%"/>
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/step_img3.png"  width = "70%" height = "70%"/>
 
 Set import configuration  
-<img src="https://github.com/hazenet-cn/PostAtmos/blob/main/docs/imgs/step_img4.png"  width = "70%" height = "70%"/>
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/step_img4.png"  width = "70%" height = "70%"/>
 
 The obs_data.csv in the data/observation folder corresponds to the t_na_station_realtime table in the database and the obs_station.csv corresponds to the t_na_stations table in the database.
 
@@ -98,11 +98,11 @@ port: The port number of the database server, the default MySQL port is 3306.
 database: Name of the database to connect to.  
 
 ### Step 6. Job submission using Slurm
-Edit the configurations in /PostAtmos/samples/post_process_samples.slurm that are labeled in the sample file
+Edit the configurations in /PostNC/samples/post_process_samples.slurm that are labeled in the sample file
 ```
 # Confirm the modification. The eight parameters are 
 # processing type (WRF or CMAQ),
-# start and end dates, path of the PostAtmos,
+# start and end dates, path of the PostNC,
 # paths of the simulation data to be verified. Multiple paths should be separated by semicolons. Multiple paths can have different grid settings.
 # data filtering configurations
 objProcess = Post_Process('CMAQ','2019-01-14','2019-01-14',\
@@ -113,7 +113,7 @@ objProcess = Post_Process('CMAQ','2019-01-14','2019-01-14',\
 and run:  
 ```shell
 
-$ sbatch /PostAtmos/samples/post_process_samples.slurm
+$ sbatch /PostNC/samples/post_process_samples.slurm
 ```
 
 If the following error occurs:  
@@ -121,7 +121,7 @@ sbatch: error: Batch script contains DOS line breaks (\r\n)
 sbatch: error: instead of expected UNIX line breaks (\n).  
 run:  
 ```shell
-$ dos2unix /PostAtmos/samples/post_process_samples.slurm  
+$ dos2unix /PostNC/samples/post_process_samples.slurm  
 ```
 ## Customized Guidelines
 Variables recommended for modification in post_process.py and their meaning:
