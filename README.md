@@ -142,5 +142,5 @@ Variables recommended for modification in post_process.py and their meaning:
 - Please report any bugs through 'Issues'.  
 
 - Contact to us:  
-chengz88@sjtu.edu.cn  
-liujiayin@sjtu.edu.cn  
+chengz88@sjtu.edu.cn  (Zhen Cheng)  
+liujiayin@sjtu.edu.cn  (Jiayin Liu)  
