@@ -54,7 +54,7 @@ Sample input files for testing can be found in the /PostNC/data folder.
 
 - Timeseries folder: time series graphs for each site within the simulation domain.  
 
-<img src="https://github.com/hazenet-cn/PostNC/blob/main/samples/Sample_output/Timeseries/NO2_Shanghai_Qingpu_Dianshan_Lake_120.978_31.0935.png"  width = "70%" height = "70%"/>
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/timeseries.png"  width = "70%" height = "70%"/>
 
 These outputs can be found in the /PostNC/samples/Sample_output folder.  
 
