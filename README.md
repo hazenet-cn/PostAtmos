@@ -17,14 +17,48 @@ By leveraging the parallel computing capabilities of high-performance computing 
 ## Inputs 
 - Output from WRF or CMAQ runs;  
 - Observations stored in a database.  
+
 Sample input files for testing can be found in the /PostNC/data folder.  
 
 ## Outputs
-- CSV folder: Tables storing matched simulated values and observations.  
+- CSV folder: Tables storing matched simulated values and observations. 
+
+| source_index | SiteCode | TimePoint           | factor_index | PM25        | PM25_obs |
+|--------------|----------|---------------------|--------------|-------------|----------|
+| 0            | 1001A    | 2019-01-06 08:00:00 | 4            | 57.8730850  | 38.0     |
+| 0            | 1002A    | 2019-01-06 08:00:00 | 4            | 33.8960838  | 41.0     |
+| 0            | 1003A    | 2019-01-06 08:00:00 | 4            | 57.8730850  | 28.0     |
+| 0            | 1004A    | 2019-01-06 08:00:00 | 4            | 57.8730850  | 34.0     |
+| 0            | 1005A    | 2019-01-06 08:00:00 | 4            | 72.5394439  | 37.0     |
+| 0            | 1006A    | 2019-01-06 08:00:00 | 4            | 57.8730850  | 34.0     |
+| 0            | 1007A    | 2019-01-06 08:00:00 | 4            | 57.8730850  | 25.0     |
+| 0            | 1008A    | 2019-01-06 08:00:00 | 4            | 51.3097457  | 23.0     |
+| 0            | 1009A    | 2019-01-06 08:00:00 | 4            | 43.6032104  | 16.0     |
+| 0            | 1011A    | 2019-01-06 08:00:00 | 4            | 54.7686958  | 20.0     |
+| 0            | 1012A    | 2019-01-06 08:00:00 | 4            | 51.1413612  | 47.0     |
+| 0            | 1015A    | 2019-01-06 08:00:00 | 4            | 76.5963745  | 52.0     |
+| 0            | 1017A    | 2019-01-06 08:00:00 | 4            | 79.1437759  | 43.0     |
+| 0            | 1018A    | 2019-01-06 08:00:00 | 4            | 79.1437759  | 48.0     |
+
 - MP4 folder: Videos depicting offline spatial distribution of data over time(with background).  
+
+<video width="320" height="240" controls>
+  <source src="https://github.com/hazenet-cn/PostNC/blob/main/samples/Sample_output/MP4/CO_CHINA_12km_Assimilation_2019-01-06_2019-01-31_Layer1.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 - PNG folder: Pictures showing spatial distribution of data without background (can be displayed on an online map).  
-- Scatter folder: scatter plots of all observations and simulated values of target species within the simulation domain.  
+
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/web_spatial_graph.png"  width = "70%" height = "70%"/>
+
+- Scatter folder: scatter plots of all observations and simulated values of target species within the simulation domain.
+
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/samples/Sample_output/Scatter/Scatter_NO2_CMAQ_regularsites_CHINA_12km_Assimilation_2019-01-06_2019-01-31.png"  width = "70%" height = "70%"/>
+
 - Timeseries folder: time series graphs for each site within the simulation domain.  
+
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/samples/Sample_output/Timeseries/NO2_Shanghai_Qingpu_Dianshan_Lake_120.978_31.0935.png"  width = "70%" height = "70%"/>
+
 These outputs can be found in the /PostNC/samples/Sample_output folder.  
 
 ## Requirements
@@ -90,7 +124,7 @@ Select destination
 Set import configuration  
 <img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/step_img4.png"  width = "70%" height = "70%"/>
 
-Note:
+### Note:
 To minimize complications, the database table names are imported as t_na_stations for station information and t_na_station_realtime for station observations. If you use your own database tables, you will need to update the database names in the code accordingly(row 124, 1301 in post_process.py); otherwise, they will not be recognized.  
 
 ### Step 5. Download Gridded Global Relief Data
@@ -155,14 +189,13 @@ $ dos2unix /PostNC/samples/post_process_samples.slurm
 - To optimize the Post_Process class for supporting additional models beyond CMAQ and WRF, follow these steps:
 
 1. Introduce a new data_type to represent the new model.
-2. In the __init__() method, add a branch to identify the variables and attributes specific to the new model's output.
-3. In the extract_2dsimu() method, add a branch to handle the identification of the new model's output file and the unit conversion of its variables.
+2. In the __init__ method, add a branch to identify the variables and attributes specific to the new model's output.
+3. In the extract_2dsimu method, add a branch to handle the identification of the new model's output file and the unit conversion of its variables.
 4. Ensure that the draw_offline_PNG, draw_online_PNG, and submit_sites methods also include the same branch to support the new model.  
 For ease of implementation, it is recommended to replicate the existing branches in the aforementioned methods and modify the relevant fields accordingly for the new model.
 
 ## Contact and Support
 - Please report any bugs through 'Issues'.  
-
 - Contact to us:  
 Zhen Cheng: chengz88@sjtu.edu.cn  
 Jiayin Liu: liujiayin@sjtu.edu.cn  
