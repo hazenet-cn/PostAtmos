@@ -42,10 +42,7 @@ Sample input files for testing can be found in the /PostNC/data folder.
 
 - MP4 folder: Videos depicting offline spatial distribution of data over time(with background).  
 
-<video width="320" height="240" controls>
-  <source src="https://github.com/hazenet-cn/PostNC/blob/main/samples/Sample_output/MP4/CO_CHINA_12km_Assimilation_2019-01-06_2019-01-31_Layer1.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+<img src="https://github.com/hazenet-cn/PostNC/blob/main/docs/imgs/CO.gif"  width = "70%" height = "70%"/>
 
 - PNG folder: Pictures showing spatial distribution of data without background (can be displayed on an online map).  
 
