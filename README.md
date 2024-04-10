@@ -61,7 +61,7 @@ These outputs can be found in the /PostNC/samples/Sample_output folder.
 ## Requirements
 + Linux based HPCs
 + MySQL Community Server
-+ OpenMPI
++ Intel oneAPI
 + Python3
 + Git
 
@@ -78,11 +78,12 @@ git clone https://github.com/hazenet-cn/PostNC.git
 $ conda env create --file env_air.yml --name target_env  
 ```
 
-### Step 3. Install Open MPI  
-Refer to https://docs.open-mpi.org/en/v5.0.x/installing-open-mpi/quickstart.html  
+### Step 3. Install Intel oneAPI and Intel MPI Library  
+Visit the Intel oneAPI Download Page at https://www.intel.com/content/www/us/en/developer/tools/oneapi/toolkits.html and choose the Intel® HPC Toolkit suitable for your operating system.  
+For installation instructions, refer to the Intel oneAPI HPC Toolkit Getting Started Guide for Linux at https://www.intel.com/content/www/us/en/docs/oneapi-hpc-toolkit/get-started-guide-linux/2024-0/overview.html.  
 
 ### Step 4. Prepare observation data in database
-You can either use your own database of observations or the sample observations provided in the data catalog for testing. The /PostNC/data/observation folder contains CSV tables of observation data that you can import into a MySQL database as follows:  
+You can either use your own database of observations or the sampsle observations provided in the data catalog for testing. The /PostNC/data/observation folder contains CSV tables of observation data that you can import into a MySQL database as follows:  
 ```sql
 -- create database in MySQL Client
 CREATE DATABASE observation;
